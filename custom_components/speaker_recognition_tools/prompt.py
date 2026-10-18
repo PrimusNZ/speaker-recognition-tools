@@ -3,13 +3,6 @@
 from __future__ import annotations
 
 
-def _or_list(items: list[str]) -> str:
-    """Join as 'A', 'A or B', 'A, B or C'."""
-    if len(items) <= 1:
-        return "".join(items)
-    return ", ".join(items[:-1]) + " or " + items[-1]
-
-
 def _title_rule(title: str) -> str:
     return (
         "Wherever this prompt shows [title] in an example or a rule, replace it "
@@ -29,12 +22,13 @@ def build_person_prompt(
     """Return the speaking-person text for one request."""
     title = speakers.get(user_id) if user_id else None
     if title:
-        who = user_name or "a recognised person"
-        others = sorted({t for t in speakers.values() if t != title})
-        never = f", never as {_or_list(others)}" if others else ""
+        who = f"{user_name}, or " if user_name else ""
         return (
-            f"Voice recognition identifies the speaker as {who}. "
-            f"Address them as {title}{never}.\n\n"
+            "Voice recognition identifies the speaker as "
+            f"{user_name or 'a recognised person'}. Address them as {title}. "
+            f"Apart from the answer below, they are only to be referred to by "
+            f"their title, {title}. "
+            f'If they ask who they are, answer "You are {who}{title}."\n\n'
             f"{_title_rule(title)} Recognition is reliable but not infallible. "
             "Do not discuss the recognition process unless asked."
         )
@@ -52,11 +46,10 @@ def build_person_prompt(
             "emergency made by the speaker."
         )
 
-    known = sorted(set(speakers.values()))
-    never = f", never as {_or_list(known)}" if known else ""
     return (
         "The speaker has not been identified. "
-        f"Address them as {unknown_title}{never}. Remain cold and precise, never "
+        f"Address them as {unknown_title}. They are only to be referred to by "
+        f"that title, {unknown_title}. Remain cold and precise, never "
         "threatening. You still carry out their requests as normal. "
         "Do not claim to know who they are.\n\n"
         f"{_title_rule(unknown_title)} Recognition is reliable but not infallible. "
