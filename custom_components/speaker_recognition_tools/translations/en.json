@@ -5,8 +5,8 @@
         "title": "Speaker Recognition Tools",
         "description": "Choose which prompt addition to add. Each can be added once and selected separately in your conversation agent's LLM APIs.",
         "menu_options": {
-          "speaking_person": "Speaking Person (title, optional deny for unknown speakers)",
-          "speaking_device": "Speaking Device (id and name of the device in use)"
+          "speaking_person": "Speaking Person",
+          "speaking_device": "Speaking Device"
         }
       }
     },
