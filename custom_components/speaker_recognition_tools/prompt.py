@@ -60,7 +60,10 @@ def build_person_prompt(
 def build_device_prompt(*, device_id: str | None, device_name: str | None) -> str:
     """Return the speaking-device text for one request."""
     if not device_id:
-        return ""
+        return (
+            "The device the speaker is using is not known. "
+            "If a tool asks which device is addressing you, ask the speaker."
+        )
     label = f" ({device_name})" if device_name else ""
     return (
         f"You are speaking through the device with id {device_id}{label}. "
