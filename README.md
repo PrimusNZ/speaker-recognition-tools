@@ -8,17 +8,17 @@ Tell your Home Assistant conversation agent who is speaking and which device the
 
 Two separate LLM APIs, added one at a time under Settings > Devices & Services > Add Integration. Each can be added once. Neither provides any tools; each only adds text to the agent's system prompt.
 
-### Speaker Recognition: Speaking Person
+### Speaking Person
 
 Gives the agent the speaker's title.
 
-- Assign a Home Assistant user account to a title (for example James to Dad, Sarah to Mum). Speaker Recognition links voice profiles to user accounts, not person entities, so pick the account its voice profile is linked to.
+- Add each person as a line under the entry: assign a Home Assistant user account to a title (for example James to Dad, Sarah to Mum). Speaker Recognition links voice profiles to user accounts, not person entities, so pick the account its voice profile is linked to.
 - Unknown speakers get a title of your choice (default Infiltrator).
 - **Deny unknown speakers** (off by default). When on, only the listed accounts can interact. Anyone else, including a request with no user, is refused with one of your refusal lines, one per row. This is an instruction to the agent, not a security barrier.
 
-Open the integration and choose Configure to change settings, add or change a person, or remove a person.
+Each person you add appears as a line under Speaking Person on the integration page (use Add person, then the line's menu to change the title or delete it). The settings (gear icon) cover the unknown title, Deny unknown speakers and the refusal lines.
 
-### Speaker Recognition: Speaking Device
+### Speaking Device
 
 Gives the agent the id and name of the device the speaker is using, so tools that need to know which device is addressing the agent can use it.
 

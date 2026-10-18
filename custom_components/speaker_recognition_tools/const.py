@@ -6,11 +6,13 @@ TOOL_TYPE_PERSON = "person"
 TOOL_TYPE_DEVICE = "device"
 
 PERSON_API_ID = f"{DOMAIN}_person"
-PERSON_API_NAME = "Speaker Recognition: Speaking Person"
+PERSON_API_NAME = "Speaking Person"
 DEVICE_API_ID = f"{DOMAIN}_device"
-DEVICE_API_NAME = "Speaker Recognition: Speaking Device"
+DEVICE_API_NAME = "Speaking Device"
 
-CONF_SPEAKERS = "speakers"  # {user_id: title}
+SUBENTRY_SPEAKER = "speaker"  # one subentry per person: data {user_id, title}
+CONF_USER_ID = "user_id"
+CONF_TITLE = "title"
 CONF_UNKNOWN_TITLE = "unknown_title"
 CONF_DENY_UNKNOWN = "deny_unknown"
 CONF_REFUSAL_LINES = "refusal_lines"  # one line per row

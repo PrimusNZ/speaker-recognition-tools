@@ -14,17 +14,39 @@
       "already_configured": "That one is already added."
     }
   },
+  "config_subentries": {
+    "speaker": {
+      "entry_type": "Person",
+      "initiate_flow": {
+        "user": "Add person"
+      },
+      "step": {
+        "user": {
+          "title": "Add person",
+          "description": "Choose the Home Assistant user account that Speaker Recognition links to this voice, and the title the agent should use for them.",
+          "data": {
+            "user_id": "Home Assistant user account",
+            "title": "Title"
+          }
+        },
+        "reconfigure": {
+          "title": "Change title",
+          "data": {
+            "title": "Title"
+          }
+        }
+      },
+      "error": {
+        "already_configured": "That account already has a title."
+      },
+      "abort": {
+        "reconfigure_successful": "Title updated."
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {
-        "title": "Speaker Recognition Tools",
-        "menu_options": {
-          "settings": "Settings",
-          "add_speaker": "Add or change a person",
-          "remove_speaker": "Remove a person"
-        }
-      },
-      "settings": {
         "title": "Settings",
         "data": {
           "deny_unknown": "Deny unknown speakers",
@@ -35,23 +57,9 @@
           "deny_unknown": "When on, only the people listed here can interact; everyone else, including requests with no user, is refused.",
           "refusal_lines": "The agent answers a denied speaker with one of these lines."
         }
-      },
-      "add_speaker": {
-        "title": "Add or change a person",
-        "data": {
-          "user": "Home Assistant user account",
-          "title": "Title"
-        }
-      },
-      "remove_speaker": {
-        "title": "Remove a person",
-        "data": {
-          "remove": "People to remove"
-        }
       }
     },
     "abort": {
-      "no_speakers": "No people are configured.",
       "no_options": "This one has no options."
     }
   }

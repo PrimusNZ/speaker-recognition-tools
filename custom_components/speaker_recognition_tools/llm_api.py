@@ -9,7 +9,9 @@ from homeassistant.helpers import device_registry as dr, llm
 from .const import (
     CONF_DENY_UNKNOWN,
     CONF_REFUSAL_LINES,
-    CONF_SPEAKERS,
+    CONF_TITLE,
+    CONF_USER_ID,
+    SUBENTRY_SPEAKER,
     CONF_UNKNOWN_TITLE,
     DEFAULT_REFUSAL_LINES,
     DEFAULT_UNKNOWN_TITLE,
@@ -46,7 +48,11 @@ class SpeakingPersonAPI(llm.API):
         prompt = build_person_prompt(
             user_id=user_id,
             user_name=user_name,
-            speakers=options.get(CONF_SPEAKERS, {}),
+            speakers={
+                sub.data[CONF_USER_ID]: sub.data[CONF_TITLE]
+                for sub in self._entry.subentries.values()
+                if sub.subentry_type == SUBENTRY_SPEAKER
+            },
             unknown_title=options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
             deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
             refusal_lines=lines or DEFAULT_REFUSAL_LINES.splitlines(),
