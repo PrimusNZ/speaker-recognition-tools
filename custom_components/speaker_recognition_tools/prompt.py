@@ -10,7 +10,7 @@ def _title_rule(title: str) -> str:
     )
 
 
-def build_person_prompt(
+def _build_person_text(
     *,
     user_id: str | None,
     user_name: str | None,
@@ -57,7 +57,7 @@ def build_person_prompt(
     )
 
 
-def build_device_prompt(*, device_id: str | None, device_name: str | None) -> str:
+def _build_device_text(*, device_id: str | None, device_name: str | None) -> str:
     """Return the speaking-device text for one request."""
     if not device_id:
         return (
@@ -69,3 +69,13 @@ def build_device_prompt(*, device_id: str | None, device_name: str | None) -> st
         f"You are speaking through the device with id {device_id}{label}. "
         "When a tool asks which device is addressing you, use this id."
     )
+
+
+def build_person_prompt(**kwargs) -> str:
+    """Return the speaking-person section, with its heading."""
+    return f"## SPEAKING PERSON\n\n{_build_person_text(**kwargs)}"
+
+
+def build_device_prompt(**kwargs) -> str:
+    """Return the speaking-device section, with its heading."""
+    return f"## SPEAKING DEVICE\n\n{_build_device_text(**kwargs)}"
