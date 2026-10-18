@@ -75,7 +75,7 @@ class SpeakingDeviceAPI(llm.API):
         if llm_context.device_id:
             device = dr.async_get(self.hass).async_get(llm_context.device_id)
             if device:
-                device_name = device.name_by_user or device.name
+                device_name = device.name
         prompt = build_device_prompt(
             device_id=llm_context.device_id, device_name=device_name
         )
