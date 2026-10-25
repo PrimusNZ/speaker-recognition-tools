@@ -35,6 +35,8 @@ from .const import (
 )
 from .prompt import Person, build_person_prompt
 
+_PREVIEW_UNKNOWN = "__unknown_speaker__"
+
 
 class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
     """Pick which tool to add; one entry per tool, like the Voice Satellite tools."""
@@ -115,12 +117,12 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
 
     async def async_step_preview(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
-            user_id = user_input[CONF_USER_ID]
+            selected_user_id = user_input[CONF_USER_ID]
+            user_id = None if selected_user_id == _PREVIEW_UNKNOWN else selected_user_id
             people = await _configured_people(self.hass, self.config_entry)
-            person = next((p for p in people if p.user_id == user_id), None)
-            if person is None:
+            if user_id is not None and not any(p.user_id == user_id for p in people):
                 return self.async_abort(reason="preview_person_missing")
-            account = await self.hass.auth.async_get_user(user_id)
+            account = await self.hass.auth.async_get_user(user_id) if user_id else None
             prompt = build_person_prompt(
                 user_id=user_id,
                 user_name=(account.name.split()[0] if account and account.name else None),
@@ -146,10 +148,20 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
             step_id="preview",
             data_schema=vol.Schema({
                 vol.Required(CONF_USER_ID): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=[
-                        selector.SelectOptionDict(value=p.user_id, label=f"{p.name or p.title} ({p.title})")
-                        for p in people
-                    ])
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value=_PREVIEW_UNKNOWN, label="Unknown speaker"
+                            ),
+                            *[
+                                selector.SelectOptionDict(
+                                    value=p.user_id,
+                                    label=f"{p.name or p.title} ({p.title})",
+                                )
+                                for p in people
+                            ],
+                        ]
+                    )
                 )
             }),
         )

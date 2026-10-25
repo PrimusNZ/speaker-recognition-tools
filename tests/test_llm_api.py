@@ -189,8 +189,13 @@ async def test_person_api_tools_only_for_recognised_speakers(hass: HomeAssistant
     instance = await _instance(hass, james.id)
     assert [t.name for t in instance.tools] == [
         "get_calendar_events",
+        "search_calendar_events",
+        "check_calendar_availability",
         "create_calendar_event",
+        "update_calendar_event",
+        "delete_calendar_event",
         "get_person_location",
+        "get_person_location_history",
     ]
     assert (await _instance(hass, None)).tools == []
     assert (await _instance(hass, "no-such-user")).tools == []

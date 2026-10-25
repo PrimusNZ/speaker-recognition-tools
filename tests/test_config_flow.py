@@ -251,6 +251,24 @@ async def test_preview_shows_generated_person_prompt(hass: HomeAssistant) -> Non
     assert "Address them as Dad." in result["description_placeholders"]["prompt"]
 
 
+async def test_preview_shows_unknown_speaker_prompt(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        flow["flow_id"], {"next_step_id": "preview"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_USER_ID: "__unknown_speaker__"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    prompt = result["description_placeholders"]["prompt"]
+    assert "Unknown Person" in prompt
+    assert "PEOPLE" in prompt
+    assert "Address them as Dad." not in prompt
+
+
 async def test_reconfigure_person_changes_title_and_entities(
     hass: HomeAssistant,
 ) -> None:

@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-10-26
+
+### Documentation
+- Added guidance on arranging stable and per-request prompt content to improve cache reuse.
+
+### Added
+- Added calendar search, availability, update and delete tools, recorded location history, and an unknown-speaker prompt preview.
+- Calendar event creation, updates and deletions now require a preview and explicit confirmation before changing a calendar.
+
 ## [0.0.8] - 2026-10-26
 
 ### Added

@@ -7,6 +7,8 @@ import zoneinfo
 
 import pytest
 from homeassistant.config_entries import ConfigSubentryData
+from homeassistant.components.calendar import CalendarEvent
+from homeassistant.components.calendar.const import CalendarEntityFeature
 from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, entity_registry as er, llm
@@ -14,6 +16,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.tools import _since_phrase, _spoken_clock
+from custom_components.speaker_recognition_tools import tools as tools_module
 from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
@@ -137,6 +140,21 @@ async def call(hass, user, tool: str, **args):
         hass, llm.ToolInput(tool_name=tool, tool_args=args), inst.llm_context
     )
     return result.data, result.error
+
+
+async def confirmed_call(hass, user, tool: str, **args):
+    """Preview a calendar change, then confirm that exact staged request."""
+    preview, error = await call(hass, user, tool, **args)
+    assert not error and preview["confirmation_required"]
+    confirmed, error = await call(
+        hass,
+        user,
+        tool,
+        **args,
+        confirmation_token=preview["confirmation_token"],
+        confirmed=True,
+    )
+    return confirmed, error
 
 
 def _entities(data: dict, key: str = "calendars") -> list[str]:
@@ -339,11 +357,96 @@ async def test_calendar_failure_is_reported(hass, users, calendars) -> None:
     assert _problems(data)["read_failed"][0]["entity_id"] == "calendar.james"
 
 
+async def test_search_and_availability_use_calendar_events(hass, users, monkeypatch) -> None:
+    event = CalendarEvent(
+        start=dt_util.parse_datetime("2026-10-29T10:00:00+13:00"),
+        end=dt_util.parse_datetime("2026-10-29T11:00:00+13:00"),
+        summary="Dentist appointment",
+        uid="event-1",
+    )
+
+    async def events(*_args):
+        return [event]
+
+    monkeypatch.setattr(tools_module, "_calendar_events", events)
+    data, error = await call(
+        hass,
+        users["James"],
+        "search_calendar_events",
+        query="DENTIST",
+        **RANGE,
+    )
+    assert not error
+    assert data["matches"][0]["event"]["uid"] == "event-1"
+
+    data, error = await call(
+        hass,
+        users["James"],
+        "check_calendar_availability",
+        start="2026-10-29T10:30:00",
+        end="2026-10-29T11:30:00",
+    )
+    assert not error
+    assert data["calendars"][0]["available"] is False
+    assert data["calendars"][0]["conflicts"][0]["summary"] == "Dentist appointment"
+
+
+async def test_update_and_delete_calendar_events_require_confirmation(
+    hass, users, monkeypatch
+) -> None:
+    event = CalendarEvent(
+        start=dt_util.parse_datetime("2026-10-29T10:00:00+13:00"),
+        end=dt_util.parse_datetime("2026-10-29T11:00:00+13:00"),
+        summary="Dentist appointment",
+        uid="event-1",
+    )
+
+    class Entity:
+        supported_features = CalendarEntityFeature.UPDATE_EVENT | CalendarEntityFeature.DELETE_EVENT
+        updates = []
+        deletions = []
+
+        async def async_update_event(self, uid, data, recurrence_id=None):
+            self.updates.append((uid, data, recurrence_id))
+
+        async def async_delete_event(self, uid, recurrence_id=None):
+            self.deletions.append((uid, recurrence_id))
+
+    entity = Entity()
+    monkeypatch.setattr(tools_module, "_calendar_entity", lambda *_args: entity)
+
+    async def events(*_args):
+        return [event]
+
+    monkeypatch.setattr(tools_module, "_calendar_events", events)
+    update_args = {"uid": "event-1", "start": "2026-10-29", "end": "2026-10-30", "summary": "Doctor"}
+    preview, error = await call(hass, users["James"], "update_calendar_event", **update_args)
+    assert not error and preview["confirmation_required"]
+    assert entity.updates == []
+    result, error = await call(
+        hass, users["James"], "update_calendar_event", **update_args,
+        confirmation_token=preview["confirmation_token"], confirmed=True,
+    )
+    assert not error and result["updated"] is True
+    assert entity.updates[0][1]["summary"] == "Doctor"
+
+    delete_args = {"uid": "event-1", "start": "2026-10-29", "end": "2026-10-30"}
+    preview, error = await call(hass, users["James"], "delete_calendar_event", **delete_args)
+    assert not error and preview["confirmation_required"]
+    assert entity.deletions == []
+    result, error = await call(
+        hass, users["James"], "delete_calendar_event", **delete_args,
+        confirmation_token=preview["confirmation_token"], confirmed=True,
+    )
+    assert not error and result["deleted"] is True
+    assert entity.deletions == [("event-1", None)]
+
+
 # --------------------------------------------------------------------------- create
 
 
 async def test_create_for_self_defaults_to_one_hour(hass, users, calendars) -> None:
-    data, error = await call(
+    data, error = await confirmed_call(
         hass,
         users["James"],
         "create_calendar_event",
@@ -363,8 +466,34 @@ async def test_create_for_self_defaults_to_one_hour(hass, users, calendars) -> N
     assert made["location"] == "Main St"
 
 
+async def test_create_requires_confirmation_before_writing(hass, users, calendars) -> None:
+    args = {
+        "summary": "Dentist",
+        "start": "2026-10-31T15:00:00",
+    }
+    preview, error = await call(
+        hass, users["James"], "create_calendar_event", **args
+    )
+    assert not error
+    assert preview["confirmation_required"] is True
+    assert preview["preview"]["event"]["summary"] == "Dentist"
+    assert calendars.creates == []
+
+    cancelled, error = await call(
+        hass,
+        users["James"],
+        "create_calendar_event",
+        **args,
+        confirmation_token=preview["confirmation_token"],
+        confirmed=False,
+    )
+    assert not error
+    assert cancelled["cancelled"] is True
+    assert calendars.creates == []
+
+
 async def test_create_on_several_peoples_calendars(hass, users, calendars) -> None:
-    data, error = await call(
+    data, error = await confirmed_call(
         hass,
         users["James"],
         "create_calendar_event",
@@ -432,7 +561,7 @@ async def test_create_on_someone_elses_private_calendar_by_id_is_refused(
 
 
 async def test_owner_can_create_on_their_private_calendar(hass, users, calendars) -> None:
-    _, error = await call(
+    _, error = await confirmed_call(
         hass,
         users["Sarah"],
         "create_calendar_event",
@@ -445,7 +574,7 @@ async def test_owner_can_create_on_their_private_calendar(hass, users, calendars
 
 
 async def test_create_all_day_event(hass, users, calendars) -> None:
-    await call(
+    await confirmed_call(
         hass, users["James"], "create_calendar_event", summary="Holiday", start="2026-10-31"
     )
     made = calendars.creates[0]
@@ -455,7 +584,7 @@ async def test_create_all_day_event(hass, users, calendars) -> None:
 
 
 async def test_all_day_end_date_is_inclusive(hass, users, calendars) -> None:
-    await call(
+    await confirmed_call(
         hass,
         users["James"],
         "create_calendar_event",
@@ -481,7 +610,7 @@ async def test_mixed_date_and_datetime_is_an_error(hass, users, calendars) -> No
 
 async def test_create_reports_partial_failure(hass, users, calendars) -> None:
     calendars.fail_on.add("calendar.sarah_home")
-    data, error = await call(
+    data, error = await confirmed_call(
         hass,
         users["James"],
         "create_calendar_event",
@@ -493,6 +622,41 @@ async def test_create_reports_partial_failure(hass, users, calendars) -> None:
     assert error
     assert data["created"] == [{"person": "Dad", "calendar": "calendar.james"}]
     assert data["failed"][0]["calendar"] == "calendar.sarah_home"
+
+
+async def test_location_history_returns_recorded_transitions(hass, users, monkeypatch) -> None:
+    hass.states.async_set("person.james", "home")
+    state = hass.states.get("person.james")
+    seen = {}
+
+    async def history(_hass, entity_ids, _start, _end):
+        seen["entity_ids"] = entity_ids
+        return {"person.james": [state]}
+
+    monkeypatch.setattr(tools_module, "_location_history", history)
+    data, error = await call(
+        hass,
+        users["James"],
+        "get_person_location_history",
+        start="2026-10-29",
+        end="2026-10-30",
+    )
+    assert not error
+    assert seen["entity_ids"] == ["person.james", "device_tracker.james_phone"]
+    assert data["people"][0]["history"][0]["location"] == "home"
+    assert "at_spoken" in data["people"][0]["history"][0]
+
+
+async def test_location_history_rejects_ranges_over_31_days(hass, users) -> None:
+    data, error = await call(
+        hass,
+        users["James"],
+        "get_person_location_history",
+        start="2026-09-01",
+        end="2026-10-03",
+    )
+    assert error
+    assert "31-day" in data["error"]
 
 
 # ------------------------------------------------------------------------- location

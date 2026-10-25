@@ -272,7 +272,16 @@ def test_person_with_only_private_entities_shows_none_to_others(prompt):
 
 def test_prompt_names_the_tools(prompt):
     text = person(prompt, user_id="u1", user_name="James", people=_private_people(prompt))
-    for name in ("get_calendar_events", "create_calendar_event", "get_person_location"):
+    for name in (
+        "get_calendar_events",
+        "search_calendar_events",
+        "check_calendar_availability",
+        "create_calendar_event",
+        "update_calendar_event",
+        "delete_calendar_event",
+        "get_person_location",
+        "get_person_location_history",
+    ):
         assert name in text
 
 

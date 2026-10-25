@@ -91,7 +91,7 @@
       },
       "preview": {
         "title": "Preview prompt",
-        "description": "Choose a configured person to see the SPEAKING PERSON and ENTITY MAPPINGS text generated for them.",
+        "description": "Choose Unknown speaker or a configured person to see the prompt text generated for that speaker.",
         "data": {"user_id": "Person"}
       },
       "preview_result": {
