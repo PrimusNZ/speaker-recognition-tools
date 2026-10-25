@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+pytest_plugins = "pytest_homeassistant_custom_component"
+
 _PROMPT = (
     Path(__file__).parent.parent
     / "custom_components"
@@ -19,3 +21,9 @@ def prompt():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(autouse=True)
+def auto_enable_custom_integrations(enable_custom_integrations):
+    """Let Home Assistant load custom_components from this repo."""
+    yield
