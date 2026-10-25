@@ -34,10 +34,12 @@ _ADDRESS_ATTRIBUTES = ("address", "geocoded_location", "formatted_address")
 _GEOCODED_SENSOR_SUFFIX = "geocoded_location"
 
 
-def _no_address_note(title: str) -> str:
+def _no_address_note(speaker: Person, target: Person) -> str:
+    """The reply the agent must give when someone is away and no address is known."""
+    who = "you" if target.user_id == speaker.user_id else target.title
     return (
-        f"An exact address for {title} is unknown. "
-        "Say only that they are away. Do not guess where."
+        f'Reply with exactly: "Sorry {speaker.title}, An exact address for {who} '
+        'is unknown." Add nothing else and do not guess where they are.'
     )
 
 
@@ -202,22 +204,53 @@ def _as_datetime(value: Any) -> datetime.datetime:
     return dt_util.start_of_local_day(value)
 
 
-def _clean_address(text: Any) -> str | None:
-    """Join a multi-line address into one line, or None if there is nothing useful."""
-    if not isinstance(text, str) or text.strip().casefold() in (
-        "",
-        "unknown",
-        "unavailable",
-    ):
+_UNUSABLE = ("", "unknown", "unavailable")
+_STREET_KEYS = ("thoroughfare", "street")
+_TOWN_KEYS = ("locality", "city", "town")
+_LEADING_NUMBER = re.compile(r"^\d+[A-Za-z]?(?:[/-]\d+[A-Za-z]?)?\s+")
+_POSTCODE = re.compile(r"^(?=.*\d)[A-Za-z0-9 -]{3,10}$")
+
+
+def _usable(text: Any) -> str | None:
+    if not isinstance(text, str) or text.strip().casefold() in _UNUSABLE:
         return None
-    parts = [part.strip() for part in re.split(r"[\r\n]+", text) if part.strip()]
-    return ", ".join(parts) or None
+    return text.strip()
+
+
+def _attribute(attributes: Any, keys: tuple[str, ...]) -> str | None:
+    """Read the first usable attribute among keys, ignoring case and spaces."""
+    normal = {str(k).casefold().replace(" ", "_"): v for k, v in attributes.items()}
+    for key in keys:
+        if value := _usable(normal.get(key)):
+            return value
+    return None
+
+
+def _street_and_town(text: str | None, attributes: Any) -> str | None:
+    """Reduce an address to a street name and a town, which is what gets spoken.
+
+    The street number, postcode and country are dropped. Uses the Companion App's
+    Thoroughfare and Locality attributes when present, otherwise reads the text.
+    """
+    street = _attribute(attributes, _STREET_KEYS)
+    town = _attribute(attributes, _TOWN_KEYS)
+    if street or town:
+        return ", ".join(part for part in (street, town) if part)
+    text = _usable(text)
+    if not text:
+        return None
+    parts = [p.strip() for p in re.split(r"[\r\n,]+", text) if p.strip()]
+    if not parts:
+        return None
+    street = _LEADING_NUMBER.sub("", parts[0]) or parts[0]
+    rest = [p for p in parts[1:] if not _POSTCODE.match(p)]
+    return ", ".join([street, *rest[:1]])
 
 
 def _address_for(
     hass: HomeAssistant, household: Household, tracker_id: str
 ) -> str | None:
-    """Find a street address for a device tracker, or None.
+    """Find the street and town for a device tracker, or None.
 
     Uses an address attribute on the tracker itself, then the Companion App's
     geocoded location sensor on the same device. A sensor another person has
@@ -225,7 +258,9 @@ def _address_for(
     """
     if (state := hass.states.get(tracker_id)) is not None:
         for attribute in _ADDRESS_ATTRIBUTES:
-            if address := _clean_address(state.attributes.get(attribute)):
+            if address := _street_and_town(
+                state.attributes.get(attribute), state.attributes
+            ):
                 return address
     registry = er.async_get(hass)
     entry = registry.async_get(tracker_id)
@@ -237,7 +272,8 @@ def _address_for(
             and (sibling.unique_id or "").endswith(_GEOCODED_SENSOR_SUFFIX)
             and not household.blocked(sibling.entity_id)
             and (sensor := hass.states.get(sibling.entity_id)) is not None
-            and (address := _clean_address(sensor.state))
+            and _usable(sensor.state)
+            and (address := _street_and_town(sensor.state, sensor.attributes))
         ):
             return address
     return None
@@ -444,9 +480,9 @@ class GetPersonLocationTool(_PersonTool):
         "Say where one or more people are. people lists titles, names or 'me'; "
         "leave it out to get everyone, which answers who is home. Uses the "
         "person and device tracker entities assigned to each person. When someone "
-        "is away, outside every zone, the result includes their street address "
-        "if their phone or tracker reports one; not every device does, and then "
-        "the result says so. A private tracker can only be read by its owner."
+        "is away, outside every zone, the result includes the street name and "
+        "town if their phone or tracker reports an address; not every device "
+        "does, and then the result says so. A private tracker can only be read by its owner."
     )
     annotations = _READ_ONLY or llm.Tool.annotations
     parameters = vol.Schema({vol.Optional("people"): [str]})
@@ -497,7 +533,7 @@ class GetPersonLocationTool(_PersonTool):
                 else:
                     # Plenty of phones have geocoding off; say so rather than leave
                     # a gap the model might fill with a guess.
-                    entry["address_note"] = _no_address_note(person.title)
+                    entry["address_note"] = _no_address_note(self.household.speaker, person)
             results.append(entry)
         data: dict[str, Any] = {"people": results}
         if problems:

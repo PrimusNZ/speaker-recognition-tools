@@ -8,7 +8,7 @@ Tell your Home Assistant conversation agent who is speaking and which device the
 >
 > Every entity you assign here is given to your conversation agent, and to the model behind it (which may be a cloud service), **whether or not you have exposed it to Assist**. Its id and name go into the prompt, and the tools can read it and, for calendars, write to it. Only assign entities you are happy to share with the agent.
 >
-> When someone is away, outside every zone, the location tool also gives their **street address** if their phone reports one, so assigning a phone shares where its owner is down to the street. Marking the person's tracker or the phone's geocoded location sensor private stops this for everyone but the owner.
+> When someone is away, outside every zone, the location tool also gives their **street name and town** if their phone reports an address, so assigning a phone shares roughly where its owner is. Marking the person's tracker or the phone's geocoded location sensor private stops this for everyone but the owner.
 >
 > **Private** only limits which household member can use an entity through this integration. Other people's private entities are left out of their prompts and refused by the tools, but the owner's prompt still lists them, and any other tool that can see the entity is not restricted. To keep an entity away from those, do not expose it to Assist.
 
@@ -53,7 +53,7 @@ Speaking Person gives recognised speakers three tools. Unidentified speakers, an
 | --- | --- |
 | `get_calendar_events` | Reads the events on one or more people's calendars between a start and an end. `people` takes titles, names or "me" (default: the speaker). A date-only end covers that whole day. |
 | `create_calendar_event` | Creates one event on one or more people's calendars, for example "on Sarah's and my calendars". The default length is one hour, and a date with no time makes an all-day event. Nothing is created unless every named person's calendar can be used. |
-| `get_person_location` | Says where people are, using the `person` and `device_tracker` entities assigned to them. When someone is away, outside every zone, it also gives their street address if their phone or tracker reports one. Leave `people` out to see everyone, which answers "who is home?". |
+| `get_person_location` | Says where people are, using the `person` and `device_tracker` entities assigned to them. When someone is away, outside every zone, it also gives the street name and town if their phone or tracker reports an address (never the number, postcode or country). Leave `people` out to see everyone, which answers "who is home?". |
 
 If a person has more than one calendar and the request does not say which, the tool returns the choices and the agent asks the speaker, then calls the tool again with the chosen `entity_id`.
 
@@ -61,9 +61,9 @@ If a person has more than one calendar and the request does not say which, the t
 
 **What this does not protect.** The rule only applies to this integration's tools and prompt text. Other tools the agent has, such as Home Assistant's own calendar tool or device controls, can still reach any entity exposed to your conversation agent. To keep an entity out of reach of them, do not expose it to Assist. The tools use the entities you assign here, whether or not they are exposed to Assist.
 
-**Street addresses.** If the person's location is not a zone, the location tool looks for an address in this order: an `address`, `geocoded_location` or `formatted_address` attribute on the device tracker, then the Companion App's *Geocoded Location* sensor on the same device. That sensor is found through the phone's device, so it does not need to be assigned to the person. Turn that sensor on in the Companion App's settings. If someone has marked the sensor private, only its owner gets the address.
+**Street addresses.** If the person's location is not a zone, the location tool looks for an address in this order: an `address`, `geocoded_location` or `formatted_address` attribute on the device tracker, then the Companion App's *Geocoded Location* sensor on the same device. The tool reduces it to street name and town, using the sensor's `Thoroughfare` and `Locality` attributes when present and otherwise the first line or two of the address. That sensor is found through the phone's device, so it does not need to be assigned to the person. Turn that sensor on in the Companion App's settings. If someone has marked the sensor private, only its owner gets the address.
 
-Not every phone has geocoding turned on, and many trackers never report an address. When someone is away and no address is found, the result carries a note saying "An exact address for [title] is unknown" and telling the agent to say only that they are away, so it does not guess. Each person is checked on their own: one phone can give an address while another gives none.
+Not every phone has geocoding turned on, and many trackers never report an address. When someone is away and no address is found, the tool tells the agent to reply with exactly "Sorry [speaker's title], An exact address for [person's title] is unknown." ("for you" when someone asks about themselves) and to add nothing else, so it does not guess. The wording lives in the tool, so you do not need to cover it in your prompt. It is an instruction to the model, which will normally follow it, but it is not enforced. Each person is checked on their own: one phone can give an address while another gives none.
 
 The tools are written against Home Assistant 2026.10 and have only been tested there.
 

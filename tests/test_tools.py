@@ -593,7 +593,7 @@ async def test_away_includes_the_companion_apps_geocoded_address(hass, users) ->
     )
     result = await _where(hass, users["Sarah"])
     assert result["location"] == "away"
-    assert result["address"] == "1 High Street, Town, 1234, New Zealand"
+    assert result["address"] == "High Street, Town"
 
 
 @pytest.mark.parametrize("zone", ["home", "Work"])
@@ -608,13 +608,13 @@ async def test_no_address_while_inside_a_zone(hass, users, zone) -> None:
 async def test_address_from_the_tracker_itself(hass, users) -> None:
     hass.states.async_set("device_tracker.james_phone", "not_home", {"address": "5 Elm Road"})
     result = await _where(hass, users["Sarah"])
-    assert result["address"] == "5 Elm Road"
+    assert result["address"] == "Elm Road"
 
 
 async def test_address_found_without_a_person_source(hass, users) -> None:
     _companion_phone(hass, "james", geocoded="2 Oak Lane")
     hass.states.async_set("person.james", "not_home")
-    assert (await _where(hass, users["Sarah"]))["address"] == "2 Oak Lane"
+    assert (await _where(hass, users["Sarah"]))["address"] == "Oak Lane"
 
 
 @pytest.mark.parametrize("state", ["unknown", "unavailable", ""])
@@ -623,8 +623,8 @@ async def test_unusable_geocoded_sensor_gives_no_address(hass, users, state) -> 
     result = await _where(hass, users["Sarah"])
     assert result["location"] == "away"
     assert "address" not in result
-    assert result["address_note"].startswith("An exact address for Dad is unknown.")
-    assert "Do not guess where" in result["address_note"]
+    assert 'Reply with exactly: "Sorry Mum, An exact address for Dad is unknown."' in result["address_note"]
+    assert "do not guess where" in result["address_note"]
 
 
 async def test_no_address_when_the_device_reports_none(hass, users) -> None:
@@ -633,8 +633,8 @@ async def test_no_address_when_the_device_reports_none(hass, users) -> None:
     assert result["location"] == "away"
     assert "address" not in result
     assert result["address_note"] == (
-        "An exact address for Dad is unknown. "
-        "Say only that they are away. Do not guess where."
+        'Reply with exactly: "Sorry Mum, An exact address for Dad is unknown." '
+        "Add nothing else and do not guess where they are."
     )
 
 
@@ -645,10 +645,68 @@ async def test_geocoding_is_per_phone(hass, users) -> None:
     hass.states.async_set("device_tracker.kim_phone", "not_home")
     with_geo = await _where(hass, users["Sarah"], "Dad")
     without = await _where(hass, users["Sarah"], "Cousin")
-    assert with_geo["address"] == "1 High Street, Town"
+    assert with_geo["address"] == "High Street, Town"
     assert "address_note" not in with_geo
     assert "address" not in without
-    assert without["address_note"].startswith("An exact address for Cousin is unknown.")
+    assert '"Sorry Mum, An exact address for Cousin is unknown."' in without["address_note"]
+
+
+async def test_companion_attributes_give_street_and_town(hass, users) -> None:
+    _companion_phone(hass, "james", geocoded="ignored\nlines")
+    hass.states.async_set(
+        "sensor.james_phone_geocoded_location",
+        "12 Elm Road\nSpringfield\n12345\nUSA",
+        {
+            "Thoroughfare": "Elm Road",
+            "Sub Thoroughfare": "12",
+            "Locality": "Springfield",
+            "Postal Code": "12345",
+            "Country": "USA",
+        },
+    )
+    assert (await _where(hass, users["Sarah"]))["address"] == "Elm Road, Springfield"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("12 Elm Road, Springfield, 12345, USA", "Elm Road, Springfield"),
+        ("12A Elm Road\nSpringfield\nSW1A 1AA\nUnited Kingdom", "Elm Road, Springfield"),
+        ("4/12 Elm Road, Springfield", "Elm Road, Springfield"),
+        ("Elm Road", "Elm Road"),
+        ("42 Elm Road", "Elm Road"),
+        ("Elm Road, 12345", "Elm Road"),
+    ],
+)
+async def test_street_and_town_from_plain_text(hass, users, text, expected) -> None:
+    hass.states.async_set("device_tracker.james_phone", "not_home", {"address": text})
+    assert (await _where(hass, users["Sarah"]))["address"] == expected
+
+
+async def test_town_only_attribute(hass, users) -> None:
+    hass.states.async_set(
+        "device_tracker.james_phone", "not_home", {"Locality": "Springfield", "address": "x"}
+    )
+    assert (await _where(hass, users["Sarah"]))["address"] == "Springfield"
+
+
+async def test_address_never_includes_number_postcode_or_country(hass, users) -> None:
+    _companion_phone(hass, "james", geocoded="1 High Street\nTown\n1234\nNew Zealand")
+    hass.states.async_set("person.james", "not_home", {"source": "device_tracker.james_phone"})
+    text = str(await _where(hass, users["Sarah"]))
+    assert "1234" not in text and "New Zealand" not in text and "1 High" not in text
+
+
+async def test_asking_about_yourself_says_you(hass, users) -> None:
+    hass.states.async_set("device_tracker.james_phone", "not_home")
+    result = await _where(hass, users["James"], "me")
+    assert '"Sorry Dad, An exact address for you is unknown."' in result["address_note"]
+
+
+async def test_reply_names_the_speaker_and_the_target(hass, users) -> None:
+    hass.states.async_set("device_tracker.james_phone", "not_home")
+    asked_by_aunt = await _where(hass, users["Ann"], "Dad")
+    assert '"Sorry Aunt, An exact address for Dad is unknown."' in asked_by_aunt["address_note"]
 
 
 async def test_disabled_geocoded_sensor_is_treated_as_off(hass, users) -> None:
@@ -671,7 +729,7 @@ async def test_private_geocoded_sensor_is_not_used_for_others(hass, users) -> No
     assert "9 Secret Street" not in str(other)
     assert "address_note" in other
     owner = await _where(hass, users["Kim"], "me")
-    assert owner["address"] == "9 Secret Street"
+    assert owner["address"] == "Secret Street"
 
 
 async def test_address_does_not_leak_through_a_private_tracker(hass, users) -> None:

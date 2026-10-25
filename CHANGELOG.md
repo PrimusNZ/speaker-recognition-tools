@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-10-25
+
+### Changed
+- When someone is away and no address is known, `get_person_location` now tells the agent to reply with exactly "Sorry [speaker's title], An exact address for [person's title] is unknown." ("for you" when asking about themselves) and nothing else. When an address is known, only the street name and town are given, never the street number, postcode or country. The wording lives in the tool, so the example prompt no longer covers it.
+
 ## [0.0.5] - 2026-10-25
 
 ### Added
