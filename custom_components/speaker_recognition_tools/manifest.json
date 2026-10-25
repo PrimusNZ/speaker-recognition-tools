@@ -9,6 +9,6 @@
   "documentation": "https://github.com/PrimusNZ/speaker-recognition-tools",
   "iot_class": "calculated",
   "integration_type": "service",
-  "version": "0.1.1",
+  "version": "0.1.1.1",
   "issue_tracker": "https://github.com/PrimusNZ/speaker-recognition-tools/issues"
 }

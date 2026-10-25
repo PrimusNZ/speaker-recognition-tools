@@ -12,7 +12,7 @@
       },
       "preview_full_result": {
         "title": "Full prompt preview",
-        "description": "{prompt}\n\n{note}"
+        "description": "{disclaimer}\n\nPrompt Preview:\n```\n{prompt}\n```\n\n{note}"
       }
     },
     "abort": {
@@ -81,7 +81,7 @@
       "step": {
         "user": {
           "title": "Full prompt preview",
-          "description": "{prompt}\n\n{note}"
+          "description": "{disclaimer}\n\nPrompt Preview:\n```\n{prompt}\n```\n\n{note}"
         }
       },
       "abort": {
@@ -117,7 +117,7 @@
       },
       "preview_result": {
         "title": "Generated prompt",
-        "description": "{prompt}"
+        "description": "Prompt Preview:\n```\n{prompt}\n```"
       }
     },
     "abort": {

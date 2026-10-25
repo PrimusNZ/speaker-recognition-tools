@@ -1,5 +1,8 @@
 """Tests for the config, options and subentry flows."""
 
+import json
+from pathlib import Path
+
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.core import HomeAssistant
@@ -73,7 +76,7 @@ async def test_full_preview_available_before_adding_either_api(
     prompt = result["description_placeholders"]["prompt"]
     assert prompt == ""
     assert "adds no prompt sections" in result["description_placeholders"]["note"]
-    assert "example rendering" not in result["description_placeholders"]["note"]
+    assert result["description_placeholders"]["disclaimer"] == ""
 
 
 async def test_each_tool_only_once(hass: HomeAssistant) -> None:
@@ -161,7 +164,7 @@ async def test_integration_page_preview_works_without_person_subentries(
     assert "## SPEAKING PERSON" in prompt
     assert "Unknown Person" in prompt
     assert "## SPEAKING DEVICE" not in prompt
-    assert "example rendering" not in flow["description_placeholders"]["note"]
+    assert flow["description_placeholders"]["disclaimer"] == ""
     assert len(entry.subentries) == 0
     result = await hass.config_entries.subentries.async_configure(flow["flow_id"], {})
     assert result["type"] is FlowResultType.ABORT
@@ -187,8 +190,10 @@ async def test_full_preview_omits_unconfigured_person_api(hass: HomeAssistant) -
     assert "## SPEAKING PERSON" not in prompt
     assert "## SPEAKING DEVICE" in prompt
     assert f"id {device.id} (Example device)" in prompt
-    assert "example rendering" in result["description_placeholders"]["note"]
-    assert "randomly selected registered device" in result["description_placeholders"]["note"]
+    disclaimer = result["description_placeholders"]["disclaimer"]
+    assert "example rendering" in disclaimer
+    assert "randomly selected registered device" in disclaimer
+    assert "example rendering" not in result["description_placeholders"]["prompt"]
 
 
 async def _user(hass: HomeAssistant, name: str):
@@ -322,6 +327,28 @@ async def test_preview_shows_generated_person_prompt(hass: HomeAssistant) -> Non
     assert "Address them as Dad." in result["description_placeholders"]["prompt"]
 
 
+async def test_prompt_preview_descriptions_separate_prompt_in_code_blocks() -> None:
+    translation_path = (
+        Path(__file__).parent.parent
+        / "custom_components/speaker_recognition_tools/translations/en.json"
+    )
+    translations = json.loads(translation_path.read_text())
+    code_block_template = (
+        "{disclaimer}\n\nPrompt Preview:\n```\n{prompt}\n```\n\n{note}"
+    )
+    assert (
+        translations["config"]["step"]["preview_full_result"]["description"]
+        == code_block_template
+    )
+    assert (
+        translations["config_subentries"]["full_prompt_preview"]["step"]["user"]["description"]
+        == code_block_template
+    )
+    assert translations["options"]["step"]["preview_result"]["description"] == (
+        "Prompt Preview:\n```\n{prompt}\n```"
+    )
+
+
 async def test_preview_shows_unknown_speaker_prompt(hass: HomeAssistant) -> None:
     entry = await _person_entry(hass)
     user = await _user(hass, "James")
@@ -377,7 +404,12 @@ async def test_full_prompt_preview_uses_logged_in_account_and_sample_device(
     assert "## SPEAKING DEVICE" in prompt
     assert f"id {device.id} (Kitchen speaker)" in prompt
     assert "the Kitchen area" in prompt
-    assert "order they were added" in result["description_placeholders"]["note"]
+    disclaimer = result["description_placeholders"]["disclaimer"]
+    note = result["description_placeholders"]["note"]
+    assert disclaimer.startswith("Disclaimer: This is an example rendering.")
+    assert "randomly selected registered device" in disclaimer
+    assert "example rendering" not in note
+    assert "order they were added" in note
 
 
 async def test_reconfigure_person_changes_title_and_entities(

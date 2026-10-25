@@ -55,11 +55,15 @@ class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Preview the integration prompt, even when no person entry exists."""
-        prompt, note = await _full_prompt_content(self.hass, self.context)
+        prompt, disclaimer, note = await _full_prompt_content(self.hass, self.context)
         return self.async_show_form(
             step_id="preview_full_result",
             data_schema=vol.Schema({}),
-            description_placeholders={"prompt": prompt, "note": note},
+            description_placeholders={
+                "disclaimer": disclaimer,
+                "prompt": prompt,
+                "note": note,
+            },
         )
 
     async def async_step_preview_full_result(
@@ -195,7 +199,7 @@ def _configured_refusal_lines(entry) -> list[str]:
     ] or DEFAULT_REFUSAL_LINES.splitlines()
 
 
-async def _full_prompt_content(hass, context) -> tuple[str, str]:
+async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
     """Build only the prompt sections from configured integration APIs."""
     entries = hass.config_entries.async_entries(DOMAIN)
     person_entry = next(
@@ -208,6 +212,7 @@ async def _full_prompt_content(hass, context) -> tuple[str, str]:
     )
     sections = []
     notes = []
+    disclaimer = ""
 
     if person_entry:
         people = await _configured_people(hass, person_entry)
@@ -232,21 +237,25 @@ async def _full_prompt_content(hass, context) -> tuple[str, str]:
     if device_entry:
         device_prompt, device_note = _sample_device_prompt(hass)
         sections.append(device_prompt)
-        notes.append(
-            "This is an example rendering. The Speaking Device section may show a "
-            "randomly selected registered device."
+        disclaimer = (
+            "Disclaimer: This is an example rendering. The Speaking Device section "
+            "may show a randomly selected registered device."
         )
         notes.append(device_note)
 
     if not sections:
-        return "", "Neither Speaking Person nor Speaking Device is configured, so the integration adds no prompt sections."
+        return (
+            "",
+            "",
+            "Neither Speaking Person nor Speaking Device is configured, so the integration adds no prompt sections.",
+        )
 
     notes.append(
         "A conversation agent receives only APIs selected for that agent. Home Assistant "
         "appends them after the conversation prompt in the order they were added. This "
         "preview excludes the agent's own prompt and Home Assistant's API wrapper text."
     )
-    return "\n\n".join(sections), " ".join(notes)
+    return "\n\n".join(sections), disclaimer, " ".join(notes)
 
 
 async def _preview_account(hass, context):
@@ -478,11 +487,15 @@ class FullPromptPreviewSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         if user_input is not None:
             return self.async_abort(reason="preview_complete")
-        prompt, note = await _full_prompt_content(self.hass, self.context)
+        prompt, disclaimer, note = await _full_prompt_content(self.hass, self.context)
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({}),
-            description_placeholders={"prompt": prompt, "note": note},
+            description_placeholders={
+                "disclaimer": disclaimer,
+                "prompt": prompt,
+                "note": note,
+            },
         )
 
 

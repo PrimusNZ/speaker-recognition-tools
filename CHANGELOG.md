@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.1.1] - 2026-10-26
+
+### Fixed
+- Full prompt previews now put the device example disclaimer first, followed by a `Prompt Preview:` label and a code block containing only the prompt. The person prompt preview also labels and displays its prompt in a code block.
+
 ## [0.1.1] - 2026-10-26
 
 ### Changed
