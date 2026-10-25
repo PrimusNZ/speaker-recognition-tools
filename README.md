@@ -29,7 +29,11 @@ Gives the agent the id and name of the device the speaker is using, so tools tha
 2. Copy `custom_components/speaker_recognition_tools` into your Home Assistant `custom_components` folder and restart.
 3. Add the integration once for each entry you want and configure Speaking Person.
 4. In your conversation agent's settings, tick the new APIs under the LLM APIs list. Put them last in the list, so the static tool text stays first and prompt caching keeps working.
-5. Where your prompt shows examples of the speaker's title, write `[title]`. The injected text tells the agent to replace it with the current speaker's title.
+5. Add a paragraph like this to your conversation agent's own prompt, so the agent knows to trust the injected sections:
+
+   > The user is whoever is speaking. Who they are, their title, the device they are speaking through, and the people and entities of this household are set in the SPEAKING PERSON, SPEAKING DEVICE, ENTITY MAPPINGS and PEOPLE sections added to this prompt. Those sections are authoritative. Never guess who is speaking.
+
+6. Where your prompt shows examples of the speaker's title, write `[title]`. The injected text tells the agent to replace it with the current speaker's title.
 
 ## Notes
 

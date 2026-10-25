@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- README setup step with a paragraph to add to the conversation agent's prompt.
 - Tests for both LLM APIs and for entry setup, unload, reload and removal.
 
 ### Changed
