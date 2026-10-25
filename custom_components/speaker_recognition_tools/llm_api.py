@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, llm
+from homeassistant.helpers import area_registry as ar, device_registry as dr, llm
 
 from .const import (
     CONF_DENY_UNKNOWN,
@@ -100,7 +100,7 @@ class SpeakingPersonAPI(llm.API):
 
 
 class SpeakingDeviceAPI(llm.API):
-    """No tools; adds the id and name of the device the speaker is using."""
+    """No tools; adds the id, name and area of the device the speaker is using."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__(hass=hass, id=DEVICE_API_ID, name=DEVICE_API_NAME)
@@ -108,13 +108,22 @@ class SpeakingDeviceAPI(llm.API):
     async def async_get_api_instance(
         self, llm_context: llm.LLMContext
     ) -> llm.APIInstance:
-        device_name = None
+        device_name = area_name = None
         if llm_context.device_id:
             device = dr.async_get(self.hass).async_get(llm_context.device_id)
             if device:
                 device_name = device.name
+                area_id = (
+                    dr.async_get_effective_area_id(self.hass, device)
+                    if hasattr(dr, "async_get_effective_area_id")
+                    else device.area_id
+                )
+                if area_id and (area := ar.async_get(self.hass).async_get_area(area_id)):
+                    area_name = area.name
         prompt = build_device_prompt(
-            device_id=llm_context.device_id, device_name=device_name
+            device_id=llm_context.device_id,
+            device_name=device_name,
+            area_name=area_name,
         )
         return llm.APIInstance(
             api=self, api_prompt=prompt, llm_context=llm_context, tools=[]

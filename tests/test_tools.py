@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import datetime
+import zoneinfo
+
 import pytest
 from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, entity_registry as er, llm
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.speaker_recognition_tools.tools import _since_phrase, _spoken_clock
 from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
@@ -736,6 +741,146 @@ async def test_address_does_not_leak_through_a_private_tracker(hass, users) -> N
     _companion_phone(hass, "ann", geocoded="3 Hidden Way")
     result = await _where(hass, users["James"], "Aunt")
     assert result == {"person": "Aunt", "location": None, "reason": "private"}
+
+
+# ----------------------------------------------------------------- how long (since)
+
+
+def local(day: int, hour: int, minute: int = 0, month: int = 10) -> datetime.datetime:
+    return datetime.datetime(2026, month, day, hour, minute, tzinfo=dt_util.DEFAULT_TIME_ZONE)
+
+
+@pytest.fixture(autouse=True)
+def _auckland_time():
+    """Run every test in one known time zone, and put the old one back after."""
+    previous = dt_util.DEFAULT_TIME_ZONE
+    dt_util.set_default_time_zone(zoneinfo.ZoneInfo("Pacific/Auckland"))
+    yield
+    dt_util.set_default_time_zone(previous)
+
+
+def now() -> datetime.datetime:
+    return local(26, 17, 0)  # a Monday
+
+
+@pytest.mark.parametrize(
+    ("hour", "minute", "expected"),
+    [
+        (0, 0, "midnight"),
+        (12, 0, "midday"),
+        (15, 0, "three o'clock"),
+        (3, 0, "three o'clock"),
+        (12, 15, "quarter past twelve"),
+        (15, 30, "half past three"),
+        (15, 45, "quarter to four"),
+        (11, 45, "quarter to twelve"),
+        (23, 45, "quarter to twelve"),
+        (15, 47, "3:47"),
+        (0, 5, "12:05"),
+    ],
+)
+def test_spoken_clock(hour, minute, expected) -> None:
+    assert _spoken_clock(local(26, hour, minute)) == expected
+
+
+@pytest.mark.parametrize(
+    ("when", "expected"),
+    [
+        ((26, 16, 59), "just now"),
+        ((26, 15, 0), "three o'clock"),  # two hours ago
+        ((26, 11, 30), "half past eleven"),  # under six hours
+        ((26, 8, 0), "eight o'clock this morning"),
+        ((26, 1, 0), "one o'clock early this morning"),
+        ((26, 0, 0), "midnight"),
+        ((25, 20, 0), "eight o'clock yesterday evening"),
+        ((25, 14, 15), "quarter past two yesterday afternoon"),
+        ((25, 7, 0), "seven o'clock yesterday morning"),
+        ((25, 22, 30), "half past ten last night"),
+        ((25, 3, 0), "three o'clock early yesterday morning"),
+        ((25, 12, 0), "midday yesterday"),
+        ((23, 18, 0), "six o'clock on Friday"),
+        ((20, 9, 0), "nine o'clock on Tuesday"),  # six days ago
+        ((19, 9, 0), "the 19th of October"),  # seven days ago
+        ((16, 9, 0), "the 16th of October"),
+        ((1, 9, 0), "the 1st of October"),
+        ((22, 9, 0, 9), "the 22nd of September"),
+        ((3, 9, 0, 9), "the 3rd of September"),
+        ((12, 9, 0, 9), "the 12th of September"),
+    ],
+)
+def test_since_phrase(when, expected) -> None:
+    assert _since_phrase(local(*when), now()) == expected
+
+
+def test_this_evening_and_tonight() -> None:
+    late = local(26, 23, 30)
+    assert _since_phrase(local(26, 17, 30), late) == "half past five this evening"
+    assert _since_phrase(local(26, 9, 0), late) == "nine o'clock this morning"
+    assert _since_phrase(local(26, 13, 0), late) == "one o'clock this afternoon"
+    assert _since_phrase(local(26, 21, 15), local(26, 23, 59)) == "quarter past nine"
+    assert _since_phrase(local(26, 21, 15), local(27, 4, 0)) == "quarter past nine last night"
+    assert _since_phrase(local(26, 22, 0), local(27, 4, 0)) == "ten o'clock last night"
+
+
+async def _set_at(hass, freezer, when, entity_id, state, attrs=None):
+    freezer.move_to(dt_util.as_utc(when))
+    hass.states.async_set(entity_id, state, attrs or {})
+
+
+async def test_location_says_how_long_they_have_been_home(hass, users, freezer) -> None:
+    await _set_at(hass, freezer, local(26, 15, 0), "person.james", "home")
+    freezer.move_to(dt_util.as_utc(now()))
+    result = await _where(hass, users["Sarah"])
+    assert result["since_spoken"] == "home since three o'clock"
+    assert result["since"] == local(26, 15, 0).isoformat()
+
+
+async def test_location_says_how_long_they_have_been_away(hass, users, freezer) -> None:
+    await _set_at(hass, freezer, local(26, 8, 0), "person.james", "not_home")
+    freezer.move_to(dt_util.as_utc(now()))
+    result = await _where(hass, users["Sarah"])
+    assert result["since_spoken"] == "away since eight o'clock this morning"
+
+
+async def test_location_since_for_a_named_zone(hass, users, freezer) -> None:
+    await _set_at(hass, freezer, local(25, 9, 0), "person.james", "Work")
+    freezer.move_to(dt_util.as_utc(now()))
+    result = await _where(hass, users["Sarah"])
+    assert result["since_spoken"] == "Work since nine o'clock yesterday morning"
+
+
+async def test_location_since_just_now(hass, users, freezer) -> None:
+    await _set_at(hass, freezer, now(), "person.james", "home")
+    result = await _where(hass, users["Sarah"])
+    assert result["since_spoken"] == "home, as of just now"
+
+
+async def test_location_since_uses_the_entity_that_gave_the_location(hass, users, freezer) -> None:
+    await _set_at(hass, freezer, local(26, 9, 0), "person.james", "not_home")
+    await _set_at(hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home")
+    freezer.move_to(dt_util.as_utc(now()))
+    result = await _where(hass, users["Sarah"])
+    assert result["since_spoken"] == "away since nine o'clock this morning"
+
+
+async def test_no_since_when_unavailable_private_or_unassigned(hass, users, freezer) -> None:
+    hass.states.async_set("person.james", "unavailable")
+    hass.states.async_set("device_tracker.james_phone", "unknown")
+    unavailable = await _where(hass, users["Sarah"])
+    assert unavailable["location"] == "unavailable"
+    assert "since" not in unavailable and "since_spoken" not in unavailable
+    private = await _where(hass, users["James"], "Aunt")
+    assert "since" not in private
+    unassigned = await _where(hass, users["James"], "Mum")
+    assert "since" not in unassigned
+
+
+async def test_since_does_not_hide_the_address_note(hass, users, freezer) -> None:
+    await _set_at(hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home")
+    freezer.move_to(dt_util.as_utc(now()))
+    result = await _where(hass, users["Sarah"])
+    assert result["since_spoken"] == "away since three o'clock"
+    assert "An exact address for Dad is unknown" in result["address_note"]
 
 
 # ---------------------------------------------------------------------- prompt/schema

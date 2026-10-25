@@ -180,7 +180,12 @@ def _build_person_text(
     )
 
 
-def _build_device_text(*, device_id: str | None, device_name: str | None) -> str:
+def _build_device_text(
+    *,
+    device_id: str | None,
+    device_name: str | None,
+    area_name: str | None = None,
+) -> str:
     """Return the speaking-device text for one request."""
     if not device_id:
         return (
@@ -188,10 +193,16 @@ def _build_device_text(*, device_id: str | None, device_name: str | None) -> str
             "If a tool asks which device is addressing you, ask the speaker."
         )
     label = f" ({device_name})" if device_name else ""
-    return (
+    text = (
         f"You are speaking through the device with id {device_id}{label}. "
         "When a tool asks which device is addressing you, use this id."
     )
+    if area_name:
+        text += (
+            f' The device is in the {area_name} area, so "here" and "this room" '
+            f"mean the {area_name}."
+        )
+    return text
 
 
 def build_person_prompt(**kwargs) -> str:

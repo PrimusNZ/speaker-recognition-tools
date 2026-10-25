@@ -479,7 +479,9 @@ class GetPersonLocationTool(_PersonTool):
     description = (
         "Say where one or more people are. people lists titles, names or 'me'; "
         "leave it out to get everyone, which answers who is home. Uses the "
-        "person and device tracker entities assigned to each person. When someone "
+        "person and device tracker entities assigned to each person. Each result "
+        "has since_spoken, how long they have been there, for example 'home "
+        "since three o'clock'; say it that way. When someone "
         "is away, outside every zone, the result includes the street name and "
         "town if their phone or tracker reports an address; not every device "
         "does, and then the result says so. A private tracker can only be read by its owner."
@@ -522,6 +524,12 @@ class GetPersonLocationTool(_PersonTool):
                 "location": known["state"] if known else "unavailable",
                 "entities": entities,
             }
+            # How long they have been there, ready to say aloud.
+            if known and (state := hass.states.get(known["entity_id"])) is not None:
+                entry["since"] = dt_util.as_local(state.last_changed).isoformat()
+                entry["since_spoken"] = _since_spoken(
+                    entry["location"], state.last_changed, dt_util.utcnow()
+                )
             # Outside every zone: add a street address when one is reported.
             if entry["location"] == "away":
                 address = None
@@ -560,6 +568,78 @@ class GetPersonLocationTool(_PersonTool):
             if entity_id.startswith("device_tracker.") and state and state.state == "not_home":
                 found.append(entity_id)
         return list(dict.fromkeys(found))
+
+
+_HOUR_WORDS = (
+    "twelve", "one", "two", "three", "four", "five",
+    "six", "seven", "eight", "nine", "ten", "eleven",
+)  # fmt: skip
+
+
+def _spoken_clock(when: datetime.datetime) -> str:
+    """Say a time the way a person would, without am or pm."""
+    hour, minute = when.hour, when.minute
+    if (hour, minute) == (0, 0):
+        return "midnight"
+    if (hour, minute) == (12, 0):
+        return "midday"
+    if minute == 0:
+        return f"{_HOUR_WORDS[hour % 12]} o'clock"
+    if minute == 15:
+        return f"quarter past {_HOUR_WORDS[hour % 12]}"
+    if minute == 30:
+        return f"half past {_HOUR_WORDS[hour % 12]}"
+    if minute == 45:
+        return f"quarter to {_HOUR_WORDS[(hour + 1) % 12]}"
+    return f"{hour % 12 or 12}:{minute:02d}"
+
+
+def _day_part(hour: int, *, today: bool) -> str:
+    """Say roughly when in the day, for today or for yesterday."""
+    if hour < 5:
+        return "early this morning" if today else "early yesterday morning"
+    if hour < 12:
+        return "this morning" if today else "yesterday morning"
+    if hour < 17:
+        return "this afternoon" if today else "yesterday afternoon"
+    if hour < 21:
+        return "this evening" if today else "yesterday evening"
+    return "tonight" if today else "last night"
+
+
+def _ordinal(day: int) -> str:
+    suffix = "th" if 11 <= day % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"{day}{suffix}"
+
+
+def _since_phrase(changed: datetime.datetime, now: datetime.datetime) -> str:
+    """Say when something changed, for example "three o'clock" or "yesterday evening"."""
+    changed, now = dt_util.as_local(changed), dt_util.as_local(now)
+    elapsed = now - changed
+    if elapsed < datetime.timedelta(minutes=2):
+        return "just now"
+    clock = _spoken_clock(changed)
+    exact = clock in ("midnight", "midday")
+    days = (now.date() - changed.date()).days
+    if days == 0:
+        if exact or elapsed < datetime.timedelta(hours=6):
+            return clock
+        return f"{clock} {_day_part(changed.hour, today=True)}"
+    if days == 1:
+        if exact:
+            return f"{clock} yesterday"
+        return f"{clock} {_day_part(changed.hour, today=False)}"
+    if days < 7:
+        return f"{clock} on {changed.strftime('%A')}"
+    return f"the {_ordinal(changed.day)} of {changed.strftime('%B')}"
+
+
+def _since_spoken(location: str, changed: datetime.datetime, now: datetime.datetime) -> str:
+    """Say where someone is and since when, for example "home since three o'clock"."""
+    phrase = _since_phrase(changed, now)
+    if phrase == "just now":
+        return f"{location}, as of just now"
+    return f"{location} since {phrase}"
 
 
 def _location_name(state: str | None) -> str:

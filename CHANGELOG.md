@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-10-26
+
+### Added
+- The SPEAKING DEVICE section now includes the device's area, so "here" and "this room" resolve. For example, it says the device is in the Lounge area and that "here" means the Lounge. Left out when the device has no area.
+- `get_person_location` now says how long someone has been home or away, ready to say aloud, such as "home since three o'clock". Times are spoken without am or pm.
+
 ## [0.0.6.1] - 2026-10-26
 
 ### Fixed

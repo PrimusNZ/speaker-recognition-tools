@@ -1,7 +1,7 @@
 """End-to-end tests of the injected prompt through the registered LLM APIs."""
 
 from homeassistant.core import Context, HomeAssistant
-from homeassistant.helpers import device_registry as dr, llm
+from homeassistant.helpers import area_registry as ar, device_registry as dr, llm
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
@@ -283,3 +283,30 @@ async def test_device_api_does_not_register_person_api(hass: HomeAssistant) -> N
     assert DEVICE_API_ID in ids
     assert PERSON_API_ID not in ids
 
+
+
+async def test_device_api_includes_the_devices_area(hass: HomeAssistant) -> None:
+    other = MockConfigEntry(domain="test")
+    other.add_to_hass(hass)
+    await _setup_device(hass)
+    area = ar.async_get(hass).async_create("Lounge")
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=other.entry_id,
+        identifiers={("test", "sat")},
+        name="Lounge Satellite",
+    )
+    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
+    text = (await _instance(hass, None, DEVICE_API_ID, device_id=device.id)).api_prompt
+    assert f"id {device.id} (Lounge Satellite)" in text
+    assert 'so "here" and "this room" mean the Lounge.' in text
+
+
+async def test_device_api_without_an_area(hass: HomeAssistant) -> None:
+    other = MockConfigEntry(domain="test")
+    other.add_to_hass(hass)
+    await _setup_device(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=other.entry_id, identifiers={("test", "x")}, name="Box"
+    )
+    text = (await _instance(hass, None, DEVICE_API_ID, device_id=device.id)).api_prompt
+    assert "area" not in text

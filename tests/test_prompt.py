@@ -293,3 +293,18 @@ def test_group_headings_never_follow_a_list_item_directly(prompt):
         if line in ("Devices:", "Other:"):
             assert lines[i - 1] == "", f"{line} needs a blank line above it"
     assert "A\n\nDevices:\n - device_tracker.b | B\n\nOther:\n - light.c | C" in text
+
+
+def test_device_area_makes_here_and_this_room_resolve(prompt):
+    text = prompt.build_device_prompt(
+        device_id="abc123", device_name="Kitchen", area_name="Lounge"
+    )
+    assert "id abc123 (Kitchen)" in text
+    assert 'The device is in the Lounge area, so "here" and "this room" mean the Lounge.' in text
+
+
+def test_device_without_area_says_nothing_about_it(prompt):
+    text = prompt.build_device_prompt(device_id="abc123", device_name="Kitchen")
+    assert "area" not in text
+    text = prompt.build_device_prompt(device_id=None, device_name=None, area_name="Lounge")
+    assert "area" not in text and "is not known" in text
