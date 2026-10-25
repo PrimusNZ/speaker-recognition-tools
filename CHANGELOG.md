@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-26
+
+### Changed
+- The full prompt preview now identifies its Speaking Device section as an example that may use a randomly selected registered device. The disclaimer appears only when Speaking Device is configured.
+
 ## [0.1.0] - 2026-10-26
 
 ### Added

@@ -73,6 +73,7 @@ async def test_full_preview_available_before_adding_either_api(
     prompt = result["description_placeholders"]["prompt"]
     assert prompt == ""
     assert "adds no prompt sections" in result["description_placeholders"]["note"]
+    assert "example rendering" not in result["description_placeholders"]["note"]
 
 
 async def test_each_tool_only_once(hass: HomeAssistant) -> None:
@@ -160,6 +161,7 @@ async def test_integration_page_preview_works_without_person_subentries(
     assert "## SPEAKING PERSON" in prompt
     assert "Unknown Person" in prompt
     assert "## SPEAKING DEVICE" not in prompt
+    assert "example rendering" not in flow["description_placeholders"]["note"]
     assert len(entry.subentries) == 0
     result = await hass.config_entries.subentries.async_configure(flow["flow_id"], {})
     assert result["type"] is FlowResultType.ABORT
@@ -185,6 +187,8 @@ async def test_full_preview_omits_unconfigured_person_api(hass: HomeAssistant) -
     assert "## SPEAKING PERSON" not in prompt
     assert "## SPEAKING DEVICE" in prompt
     assert f"id {device.id} (Example device)" in prompt
+    assert "example rendering" in result["description_placeholders"]["note"]
+    assert "randomly selected registered device" in result["description_placeholders"]["note"]
 
 
 async def _user(hass: HomeAssistant, name: str):

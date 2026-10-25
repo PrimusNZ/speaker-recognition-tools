@@ -232,6 +232,10 @@ async def _full_prompt_content(hass, context) -> tuple[str, str]:
     if device_entry:
         device_prompt, device_note = _sample_device_prompt(hass)
         sections.append(device_prompt)
+        notes.append(
+            "This is an example rendering. The Speaking Device section may show a "
+            "randomly selected registered device."
+        )
         notes.append(device_note)
 
     if not sections:
