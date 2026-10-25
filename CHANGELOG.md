@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.6.1] - 2026-10-26
+
+### Fixed
+- Entity groups in the ENTITY MAPPINGS section are now separated by a blank line. Without it, a markdown renderer folded a group heading such as "Devices:" into the end of the previous list item.
+
 ## [0.0.6] - 2026-10-25
 
 ### Changed

@@ -41,17 +41,21 @@ def _line(entity_id: str, label: str, private: bool = False) -> str:
 
 def _person_block(person: Person, current: bool) -> str:
     heading = _label(person.name, person.title)
-    lines = [f"### {heading}{' [current speaker]' if current else ''}"]
+    title = f"### {heading}{' [current speaker]' if current else ''}"
     # Other people's private entities are never shown.
     visible = [e for e in person.entities if current or e[0] not in person.private]
     if not visible:
-        lines.append("(no entities)")
+        return f"{title}\n(no entities)"
+    # A blank line between groups keeps a markdown renderer from folding the next
+    # group's heading into the last list item.
+    groups = []
     for group in (*(name for name, _ in _GROUPS), "Other"):
         members = [e for e in visible if _group(e[0]) == group]
         if members:
-            lines.append(f"{group}:")
+            lines = [f"{group}:"]
             lines.extend(_line(*e, e[0] in person.private) for e in members)
-    return "\n".join(lines)
+            groups.append("\n".join(lines))
+    return title + "\n" + "\n\n".join(groups)
 
 
 def _label(name: str | None, title: str) -> str:

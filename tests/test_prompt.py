@@ -121,6 +121,7 @@ def test_person_blocks_with_grouped_entities(prompt):
         "### James (Dad) [current speaker]\n"
         "Calendars:\n"
         " - calendar.james | James\n"
+        "\n"
         "Devices:\n"
         " - device_tracker.james_phone | James phone\n"
         "\n"
@@ -146,8 +147,8 @@ def test_groups_and_order(prompt):
         people=[P(prompt, "u1", "James", "Dad", *ents), P(prompt, "u2", "Sarah", "Mum")],
     )
     assert (
-        "Calendars:\n - calendar.work | Work\n"
-        "Devices:\n - sensor.car_fuel | Car Fuel\n - device_tracker.phone | Phone\n"
+        "Calendars:\n - calendar.work | Work\n\n"
+        "Devices:\n - sensor.car_fuel | Car Fuel\n - device_tracker.phone | Phone\n\n"
         "Other:\n - light.lamp | Lamp"
     ) in text
 
@@ -273,3 +274,22 @@ def test_prompt_names_the_tools(prompt):
     text = person(prompt, user_id="u1", user_name="James", people=_private_people(prompt))
     for name in ("get_calendar_events", "create_calendar_event", "get_person_location"):
         assert name in text
+
+
+def test_group_headings_never_follow_a_list_item_directly(prompt):
+    """A markdown renderer folds a line straight after a bullet into that bullet."""
+    ents = (
+        ("calendar.a", "A"),
+        ("device_tracker.b", "B"),
+        ("light.c", "C"),
+    )
+    text = person(
+        prompt,
+        user_id="u1",
+        people=[P(prompt, "u1", "James", "Dad", *ents), P(prompt, "u2", "Sarah", "Mum")],
+    )
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line in ("Devices:", "Other:"):
+            assert lines[i - 1] == "", f"{line} needs a blank line above it"
+    assert "A\n\nDevices:\n - device_tracker.b | B\n\nOther:\n - light.c | C" in text
