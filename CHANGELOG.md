@@ -5,8 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-10-25
+
 ### Added
-- README setup step with a paragraph to add to the conversation agent's prompt.
+- `EXAMPLE_PROMPT.txt`, a complete example conversation agent prompt that works with the injected sections.
+- README setup step with a paragraph to add to the conversation agent's prompt, and a table summarising the sections added to the prompt.
 - Tests for both LLM APIs and for entry setup, unload, reload and removal.
 
 ### Changed

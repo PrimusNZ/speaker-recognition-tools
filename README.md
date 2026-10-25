@@ -23,6 +23,19 @@ Each person you add appears as a line under Speaking Person on the integration p
 
 Gives the agent the id and name of the device the speaker is using, so tools that need to know which device is addressing the agent can use it.
 
+## What gets added to the prompt
+
+Four sections are appended to the conversation agent's system prompt. Speaking Person adds the first three, and Speaking Device adds the last. Which of them appears depends on who is speaking.
+
+| Section | Added by | Shown to | What it does |
+| --- | --- | --- | --- |
+| `SPEAKING PERSON` | Speaking Person | Everyone | Says who is speaking. For a recognised speaker it gives their title and the name to answer with when they ask who they are, and tells the agent to refer to them only by title and to replace `[title]` with it. For an unidentified speaker it gives the unknown title and tells the agent to carry on as normal without claiming to know them. With Deny unknown speakers on, an unidentified speaker instead gets a lockdown instruction that overrides the rest of the prompt and makes the agent refuse with one of your refusal lines. |
+| `ENTITY MAPPINGS` | Speaking Person | Recognised speakers | One block per configured person, with the speaker first and everyone else alphabetically. Each block lists that person's entities, grouped as Calendars, Devices and Other. It tells the agent that "my", "me" and "I" mean the current speaker, that a request about another person uses only that person's entities, that a request naming several people uses each person's matching entities, to ask which one when a person has several of the type needed, and to say so when a person has none. Left out when there is nobody else configured and the speaker has no entities. |
+| `PEOPLE` | Speaking Person | Unidentified speakers who are allowed in | A list of the configured people and their titles, with no entities, so the agent can still refer to household members by title. Never shown with Deny unknown speakers on. |
+| `SPEAKING DEVICE` | Speaking Device | Everyone | Gives the id and name of the device the request came through, so a tool that asks which device is addressing the agent can use it, or "here" can be resolved. When the device is not known it says so and tells the agent to ask the speaker. |
+
+Only first names are ever used, never a full account name. A person with no title is shown by their first name.
+
 ## Use it
 
 1. Install and train Speaker Recognition first, and make sure your voice pipeline uses its wrapped speech-to-text and conversation entities.
@@ -32,6 +45,8 @@ Gives the agent the id and name of the device the speaker is using, so tools tha
 5. Add a paragraph like this to your conversation agent's own prompt, so the agent knows to trust the injected sections:
 
    > The user is whoever is speaking. Who they are, their title, the device they are speaking through, and the people and entities of this household are set in the SPEAKING PERSON, SPEAKING DEVICE, ENTITY MAPPINGS and PEOPLE sections added to this prompt. Those sections are authoritative. Never guess who is speaking.
+
+   [`EXAMPLE_PROMPT.txt`](EXAMPLE_PROMPT.txt) is a complete example prompt for a generic home assistant that works with these sections. Use it as a starting point.
 
 6. Where your prompt shows examples of the speaker's title, write `[title]`. The injected text tells the agent to replace it with the current speaker's title.
 
