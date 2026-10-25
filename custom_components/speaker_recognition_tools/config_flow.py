@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from typing import Any
 
 import voluptuous as vol
@@ -15,7 +16,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import selector
+from homeassistant.helpers import area_registry as ar, device_registry as dr, selector
 
 from .const import (
     CONF_DENY_UNKNOWN,
@@ -29,24 +30,42 @@ from .const import (
     DEFAULT_REFUSAL_LINES,
     DEFAULT_UNKNOWN_TITLE,
     DOMAIN,
+    SUBENTRY_PREVIEW,
     SUBENTRY_SPEAKER,
     TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
 )
-from .prompt import Person, build_person_prompt
+from .prompt import Person, build_device_prompt, build_person_prompt
 
 _PREVIEW_UNKNOWN = "__unknown_speaker__"
 
 
 class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
-    """Pick which tool to add; one entry per tool, like the Voice Satellite tools."""
+    """Pick a prompt addition to add, or preview the integration prompt."""
 
     VERSION = 1
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return self.async_show_menu(
-            step_id="user", menu_options=["speaking_person", "speaking_device"]
+            step_id="user",
+            menu_options=["speaking_person", "speaking_device", "preview_full"],
         )
+
+    async def async_step_preview_full(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Preview the integration prompt, even when no person entry exists."""
+        prompt, note = await _full_prompt_content(self.hass, self.context)
+        return self.async_show_form(
+            step_id="preview_full_result",
+            data_schema=vol.Schema({}),
+            description_placeholders={"prompt": prompt, "note": note},
+        )
+
+    async def async_step_preview_full_result(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        return self.async_abort(reason="preview_complete")
 
     async def async_step_speaking_person(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         await self.async_set_unique_id(f"{DOMAIN}_{TOOL_TYPE_PERSON}")
@@ -78,9 +97,12 @@ class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
     def async_get_supported_subentry_types(
         cls, config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
-        """Only Speaking Person has people under it."""
+        """Expose person configuration and the integration-level preview on Speaking Person."""
         if config_entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_PERSON:
-            return {SUBENTRY_SPEAKER: SpeakerSubentryFlow}
+            return {
+                SUBENTRY_SPEAKER: SpeakerSubentryFlow,
+                SUBENTRY_PREVIEW: FullPromptPreviewSubentryFlow,
+            }
         return {}
 
 
@@ -130,11 +152,7 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                 people=people,
                 unknown_title=self.config_entry.options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
                 deny_unknown=self.config_entry.options.get(CONF_DENY_UNKNOWN, False),
-                refusal_lines=[
-                    line.strip() for line in self.config_entry.options.get(
-                        CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES
-                    ).splitlines() if line.strip()
-                ] or DEFAULT_REFUSAL_LINES.splitlines(),
+                refusal_lines=_configured_refusal_lines(self.config_entry),
             )
             return self.async_show_form(
                 step_id="preview_result",
@@ -168,6 +186,104 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
 
     async def async_step_preview_result(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return self.async_abort(reason="preview_complete")
+
+def _configured_refusal_lines(entry) -> list[str]:
+    return [
+        line.strip()
+        for line in entry.options.get(CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES).splitlines()
+        if line.strip()
+    ] or DEFAULT_REFUSAL_LINES.splitlines()
+
+
+async def _full_prompt_content(hass, context) -> tuple[str, str]:
+    """Build only the prompt sections from configured integration APIs."""
+    entries = hass.config_entries.async_entries(DOMAIN)
+    person_entry = next(
+        (entry for entry in entries if entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_PERSON),
+        None,
+    )
+    device_entry = next(
+        (entry for entry in entries if entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_DEVICE),
+        None,
+    )
+    sections = []
+    notes = []
+
+    if person_entry:
+        people = await _configured_people(hass, person_entry)
+        options = person_entry.options
+        account, uses_session_account = await _preview_account(hass, context)
+        person_prompt = build_person_prompt(
+            user_id=account.id if account else None,
+            user_name=(account.name.split()[0] if account and account.name else None),
+            speakers={p.user_id: p.title for p in people},
+            people=people,
+            unknown_title=options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
+            deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
+            refusal_lines=_configured_refusal_lines(person_entry),
+        )
+        sections.append(person_prompt)
+        notes.append(
+            "Uses the signed-in Home Assistant account."
+            if uses_session_account
+            else "This flow did not provide the signed-in account ID, so the Home Assistant owner account is used."
+        )
+
+    if device_entry:
+        device_prompt, device_note = _sample_device_prompt(hass)
+        sections.append(device_prompt)
+        notes.append(device_note)
+
+    if not sections:
+        return "", "Neither Speaking Person nor Speaking Device is configured, so the integration adds no prompt sections."
+
+    notes.append(
+        "A conversation agent receives only APIs selected for that agent. Home Assistant "
+        "appends them after the conversation prompt in the order they were added. This "
+        "preview excludes the agent's own prompt and Home Assistant's API wrapper text."
+    )
+    return "\n\n".join(sections), " ".join(notes)
+
+
+async def _preview_account(hass, context):
+    """Use the flow's signed-in user when available, or the HA owner account."""
+    if user_id := context.get("user_id"):
+        if account := await hass.auth.async_get_user(user_id):
+            return account, True
+    users = await hass.auth.async_get_users()
+    account = next((user for user in users if user.is_owner and user.is_active), None)
+    return account, False
+
+
+def _sample_device_prompt(hass) -> tuple[str, str]:
+    """Build a device section from a representative device in this installation."""
+    registry = dr.async_get(hass)
+    devices = list(registry.devices.values())
+    with_area = [device for device in devices if _device_area_id(hass, device)]
+    candidates = with_area or devices
+    if not candidates:
+        return (
+            build_device_prompt(device_id=None, device_name=None),
+            "No registered device was found, so the device section says the device is unknown.",
+        )
+    device = random.choice(candidates)
+    area_id = _device_area_id(hass, device)
+    area = ar.async_get(hass).async_get_area(area_id) if area_id else None
+    prompt = build_device_prompt(
+        device_id=device.id,
+        device_name=device.name,
+        area_name=area.name if area else None,
+    )
+    return prompt, f"The device section uses {device.name or device.id} as an example device."
+
+
+def _device_area_id(hass, device) -> str | None:
+    """Return a device's assigned or inherited area."""
+    return (
+        dr.async_get_effective_area_id(hass, device)
+        if hasattr(dr, "async_get_effective_area_id")
+        else device.area_id
+    )
 
 
 async def _configured_people(hass, entry) -> list[Person]:
@@ -347,6 +463,22 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id="reconfigure", data_schema=schema, errors=errors,
             description_placeholders={"entity_warnings": issues},
+        )
+
+
+class FullPromptPreviewSubentryFlow(ConfigSubentryFlow):
+    """Show the full prompt from the integration page without creating a subentry."""
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            return self.async_abort(reason="preview_complete")
+        prompt, note = await _full_prompt_content(self.hass, self.context)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema({}),
+            description_placeholders={"prompt": prompt, "note": note},
         )
 
 

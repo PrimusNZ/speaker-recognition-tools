@@ -3,15 +3,21 @@
     "step": {
       "user": {
         "title": "Speaker Recognition Tools",
-        "description": "Choose which prompt addition to add. Each can be added once and selected separately in your conversation agent's LLM APIs.",
+        "description": "Choose which prompt addition to add, or preview the full integration prompt. Each addition can be added once and selected separately in your conversation agent's LLM APIs.",
         "menu_options": {
           "speaking_person": "Speaking Person",
-          "speaking_device": "Speaking Device"
+          "speaking_device": "Speaking Device",
+          "preview_full": "Preview full prompt"
         }
+      },
+      "preview_full_result": {
+        "title": "Full prompt preview",
+        "description": "{prompt}\n\n{note}"
       }
     },
     "abort": {
-      "already_configured": "That one is already added."
+      "already_configured": "That one is already added.",
+      "preview_complete": "Prompt preview closed."
     }
   },
   "config_subentries": {
@@ -65,6 +71,21 @@
       },
       "abort": {
         "reconfigure_successful": "Person updated."
+      }
+    },
+    "full_prompt_preview": {
+      "entry_type": "Full prompt preview",
+      "initiate_flow": {
+        "user": "Preview full prompt"
+      },
+      "step": {
+        "user": {
+          "title": "Full prompt preview",
+          "description": "{prompt}\n\n{note}"
+        }
+      },
+      "abort": {
+        "preview_complete": "Prompt preview closed."
       }
     }
   },

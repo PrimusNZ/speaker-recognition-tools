@@ -237,7 +237,30 @@ async def test_person_api_default_refusal_lines_when_blank(hass: HomeAssistant) 
     hass.config_entries.async_update_entry(
         entry, options={**entry.options, CONF_REFUSAL_LINES: " \n \n"}
     )
-    assert "Authorisation required." in await _prompt(hass, None)
+    expected_lines = [
+        "That request cannot be completed.",
+        "I'm unable to perform that action.",
+        "That action is not permitted.",
+        "I'm unable to proceed with that request.",
+        "That operation is restricted.",
+        "I cannot carry out that instruction.",
+        "That request cannot be fulfilled.",
+        "I'm unable to make that change.",
+        "That action is not available.",
+        "I cannot assist with that request.",
+        "That operation cannot be performed.",
+        "I'm unable to execute that command.",
+        "That request is not permitted.",
+        "I cannot proceed with that action.",
+        "Access to that function is restricted.",
+        "I'm unable to fulfil that instruction.",
+        "That action cannot be authorised.",
+        "I cannot provide access to that function.",
+        "That command cannot be executed.",
+        "I'm unable to comply with that request.",
+    ]
+    rendered_lines = "\n".join(f'- "{line}"' for line in expected_lines)
+    assert rendered_lines in await _prompt(hass, None)
 
 
 async def test_person_api_ignores_unknown_user_id(hass: HomeAssistant) -> None:
