@@ -23,24 +23,34 @@
       "step": {
         "user": {
           "title": "Add person",
-          "description": "Choose the Home Assistant user account that Speaker Recognition links to this voice, and the title the agent should use for them.",
+          "description": "Choose the Home Assistant user account that Speaker Recognition links to this voice, and the title the agent should use for them. If you leave the title blank, the first name on the account is used.",
           "data": {
             "user_id": "Home Assistant user account",
-            "title": "Title"
+            "title": "Title",
+            "entities": "Entities"
+          },
+          "data_description": {
+            "title": "Optional. Leave blank to use the first name on the account.",
+            "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App. The agent uses them for requests like \"What's on my calendar?\" or \"What is Sarah doing on Friday?\"."
           }
         },
         "reconfigure": {
-          "title": "Change title",
+          "title": "Change person",
           "data": {
-            "title": "Title"
+            "title": "Title",
+            "entities": "Entities"
+          },
+          "data_description": {
+            "title": "Optional. Leave blank to use the first name on the account.",
+            "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App."
           }
         }
       },
       "error": {
-        "already_configured": "That account already has a title."
+        "already_configured": "That account has already been added."
       },
       "abort": {
-        "reconfigure_successful": "Title updated."
+        "reconfigure_successful": "Person updated."
       }
     }
   },

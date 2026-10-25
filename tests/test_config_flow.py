@@ -7,6 +7,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
+    CONF_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_TITLE,
     CONF_TOOL_TYPE,
@@ -118,13 +119,16 @@ async def _user(hass: HomeAssistant, name: str):
     return await hass.auth.async_create_user(name, group_ids=["system-users"])
 
 
-async def _add_person(hass, entry, user_id, title):
+async def _add_person(hass, entry, user_id, title=None, entities=None):
     result = await hass.config_entries.subentries.async_init(
         (entry.entry_id, SUBENTRY_SPEAKER), context={"source": "user"}
     )
     assert result["type"] is FlowResultType.FORM
     return await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_USER_ID: user_id, CONF_TITLE: title}
+        result["flow_id"],
+        {CONF_USER_ID: user_id}
+        | ({CONF_TITLE: title} if title is not None else {})
+        | ({CONF_ENTITIES: entities} if entities else {}),
     )
 
 
@@ -133,9 +137,9 @@ async def test_add_person(hass: HomeAssistant) -> None:
     user = await _user(hass, "James")
     result = await _add_person(hass, entry, user.id, "  Dad  ")
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "James: Dad"
+    assert result["title"] == "James: Dad (no entities)"
     sub = next(iter(entry.subentries.values()))
-    assert dict(sub.data) == {CONF_USER_ID: user.id, CONF_TITLE: "Dad"}
+    assert dict(sub.data) == {CONF_USER_ID: user.id, CONF_TITLE: "Dad", CONF_ENTITIES: []}
 
 
 async def test_add_person_duplicate_user_rejected(hass: HomeAssistant) -> None:
@@ -148,21 +152,84 @@ async def test_add_person_duplicate_user_rejected(hass: HomeAssistant) -> None:
     assert len(entry.subentries) == 1
 
 
-async def test_reconfigure_person_changes_title_only(hass: HomeAssistant) -> None:
+async def test_add_person_with_entities(hass: HomeAssistant) -> None:
     entry = await _person_entry(hass)
     user = await _user(hass, "James")
-    await _add_person(hass, entry, user.id, "Dad")
-    sub_id = next(iter(entry.subentries))
+    entities = ["calendar.james", "device_tracker.james_phone"]
+    result = await _add_person(hass, entry, user.id, "Dad", entities)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    sub = next(iter(entry.subentries.values()))
+    assert sub.data[CONF_ENTITIES] == entities
+    assert result["title"] == "James: Dad (2 entities)"
+
+
+async def test_list_label_counts_one_entity(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    result = await _add_person(hass, entry, user.id, "Dad", ["calendar.james"])
+    assert result["title"] == "James: Dad (1 entity)"
+
+
+async def _reconfigure(hass, entry, sub_id, data):
     result = await hass.config_entries.subentries.async_init(
         (entry.entry_id, SUBENTRY_SPEAKER),
         context={"source": "reconfigure", "subentry_id": sub_id},
     )
     assert result["type"] is FlowResultType.FORM
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_TITLE: "Father"}
+    return await hass.config_entries.subentries.async_configure(
+        result["flow_id"], data
+    )
+
+
+async def test_reconfigure_person_changes_title_and_entities(
+    hass: HomeAssistant,
+) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad", ["calendar.james"])
+    sub_id = next(iter(entry.subentries))
+    result = await _reconfigure(
+        hass,
+        entry,
+        sub_id,
+        {CONF_TITLE: "Father", CONF_ENTITIES: ["calendar.james", "calendar.work"]},
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     sub = entry.subentries[sub_id]
-    assert dict(sub.data) == {CONF_USER_ID: user.id, CONF_TITLE: "Father"}
-    assert sub.title == "James: Father"
+    assert dict(sub.data) == {
+        CONF_USER_ID: user.id,
+        CONF_TITLE: "Father",
+        CONF_ENTITIES: ["calendar.james", "calendar.work"],
+    }
+    assert sub.title == "James: Father (2 entities)"
+
+
+async def test_reconfigure_can_clear_entities(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad", ["calendar.james"])
+    sub_id = next(iter(entry.subentries))
+    await _reconfigure(hass, entry, sub_id, {CONF_TITLE: "Dad", CONF_ENTITIES: []})
+    assert entry.subentries[sub_id].data[CONF_ENTITIES] == []
+
+
+async def test_add_person_without_title(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James Smith")
+    result = await _add_person(hass, entry, user.id)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "James Smith (no entities)"
+    sub = next(iter(entry.subentries.values()))
+    assert sub.data[CONF_TITLE] == ""
+
+
+async def test_reconfigure_can_clear_title(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    sub_id = next(iter(entry.subentries))
+    await _reconfigure(hass, entry, sub_id, {CONF_ENTITIES: []})
+    sub = entry.subentries[sub_id]
+    assert sub.data[CONF_TITLE] == ""
+    assert sub.title == "James (no entities)"

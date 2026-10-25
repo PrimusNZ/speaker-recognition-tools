@@ -10,9 +10,10 @@ PERSON_API_NAME = "Speaking Person"
 DEVICE_API_ID = f"{DOMAIN}_device"
 DEVICE_API_NAME = "Speaking Device"
 
-SUBENTRY_SPEAKER = "speaker"  # one subentry per person: data {user_id, title}
+SUBENTRY_SPEAKER = "speaker"  # one subentry per person: data {user_id, title, entities}
 CONF_USER_ID = "user_id"
 CONF_TITLE = "title"
+CONF_ENTITIES = "entities"  # optional list of entity ids
 CONF_UNKNOWN_TITLE = "unknown_title"
 CONF_DENY_UNKNOWN = "deny_unknown"
 CONF_REFUSAL_LINES = "refusal_lines"  # one line per row

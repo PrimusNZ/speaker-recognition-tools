@@ -8,6 +8,7 @@ from homeassistant.helpers import device_registry as dr, llm
 
 from .const import (
     CONF_DENY_UNKNOWN,
+    CONF_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_TITLE,
     CONF_USER_ID,
@@ -20,7 +21,13 @@ from .const import (
     PERSON_API_ID,
     PERSON_API_NAME,
 )
-from .prompt import build_device_prompt, build_person_prompt
+from .prompt import Person, build_device_prompt, build_person_prompt
+
+
+def _first_name(name: str | None) -> str | None:
+    """Return the first word of an account name; only first names reach the prompt."""
+    parts = (name or "").split()
+    return parts[0] if parts else None
 
 
 class SpeakingPersonAPI(llm.API):
@@ -38,7 +45,29 @@ class SpeakingPersonAPI(llm.API):
 
         user_name = None
         if user_id and (user := await self.hass.auth.async_get_user(user_id)):
-            user_name = user.name
+            user_name = _first_name(user.name)
+
+        speakers = {
+            sub.data[CONF_USER_ID]: sub.data[CONF_TITLE]
+            for sub in self._entry.subentries.values()
+            if sub.subentry_type == SUBENTRY_SPEAKER
+        }
+        people = []
+        for sub in self._entry.subentries.values():
+            if sub.subentry_type != SUBENTRY_SPEAKER:
+                continue
+            account = await self.hass.auth.async_get_user(sub.data[CONF_USER_ID])
+            entities = []
+            for entity_id in sub.data.get(CONF_ENTITIES, []):
+                state = self.hass.states.get(entity_id)
+                entities.append((entity_id, state.name if state else entity_id))
+            name = _first_name(account.name) if account else None
+            title = sub.data.get(CONF_TITLE) or name
+            if not title:
+                continue  # no title and no account name to fall back on
+            people.append(
+                Person(sub.data[CONF_USER_ID], name, title, tuple(entities))
+            )
 
         lines = [
             line.strip()
@@ -48,11 +77,8 @@ class SpeakingPersonAPI(llm.API):
         prompt = build_person_prompt(
             user_id=user_id,
             user_name=user_name,
-            speakers={
-                sub.data[CONF_USER_ID]: sub.data[CONF_TITLE]
-                for sub in self._entry.subentries.values()
-                if sub.subentry_type == SUBENTRY_SPEAKER
-            },
+            speakers={p.user_id: p.title for p in people},
+            people=people,
             unknown_title=options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
             deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
             refusal_lines=lines or DEFAULT_REFUSAL_LINES.splitlines(),

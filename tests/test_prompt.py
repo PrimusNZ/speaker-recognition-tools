@@ -26,7 +26,7 @@ def test_person_heading(prompt):
 def test_known_speaker_gets_title_and_name(prompt):
     text = person(prompt, user_id="u1", user_name="James")
     assert "Address them as Dad." in text
-    assert 'answer "You are James, or Dad."' in text
+    assert 'answer "You are Dad (James)."' in text
     assert "replace it with the title for the current speaker, which is Dad" in text
 
 
@@ -88,3 +88,147 @@ def test_device_without_name(prompt):
     text = prompt.build_device_prompt(device_id="abc123", device_name=None)
     assert "id abc123." in text
     assert "()" not in text
+
+
+def P(prompt, uid, name, title, *entities):
+    return prompt.Person(uid, name, title, tuple(entities))
+
+
+def people(prompt, *, entities=False):
+    james = ("calendar.james", "James"), ("device_tracker.james_phone", "James phone")
+    sarah = (("calendar.sarah", "Sarah"),)
+    return [
+        P(prompt, "u1", "James", "Dad", *(james if entities else ())),
+        P(prompt, "u2", "Sarah", "Mum", *(sarah if entities else ())),
+        P(prompt, "u3", "Tom", "Grandad"),
+    ]
+
+
+def test_section_heading_and_intro(prompt):
+    text = person(prompt, user_id="u1", user_name="James", people=people(prompt, entities=True))
+    assert "\n\n## ENTITY MAPPINGS\n\nBelow is a list of people and the entities that relate to them." in text
+    assert "Refer to people by title, not by name" in text
+    assert '"my", "me" or "I" means Dad, the current speaker.' in text
+    assert "A request naming two or more people who each have a matching type of entity (such as a calendar) uses the matching entities of each." in text
+    assert "If a person has more than one entity of the type needed" in text
+    assert "ask which one is meant before acting" in text
+    assert "Sarah" not in text.split("## ENTITY MAPPINGS")[1].split("###")[0]
+
+
+def test_person_blocks_with_grouped_entities(prompt):
+    text = person(prompt, user_id="u1", user_name="James", people=people(prompt, entities=True))
+    assert (
+        "### James (Dad) [current speaker]\n"
+        "Calendars:\n"
+        " - calendar.james | James\n"
+        "Devices:\n"
+        " - device_tracker.james_phone | James phone\n"
+        "\n"
+        "### Sarah (Mum)\n"
+        "Calendars:\n"
+        " - calendar.sarah | Sarah\n"
+        "\n"
+        "### Tom (Grandad)\n"
+        "(no entities)"
+    ) in text
+
+
+def test_groups_and_order(prompt):
+    ents = (
+        ("light.lamp", "Lamp"),
+        ("sensor.car_fuel", "Car Fuel"),
+        ("calendar.work", "Work"),
+        ("device_tracker.phone", "Phone"),
+    )
+    text = person(
+        prompt,
+        user_id="u1",
+        people=[P(prompt, "u1", "James", "Dad", *ents), P(prompt, "u2", "Sarah", "Mum")],
+    )
+    assert (
+        "Calendars:\n - calendar.work | Work\n"
+        "Devices:\n - sensor.car_fuel | Car Fuel\n - device_tracker.phone | Phone\n"
+        "Other:\n - light.lamp | Lamp"
+    ) in text
+
+
+def test_unknown_speaker_gets_titles_but_no_entities(prompt):
+    for uid in (None, "stranger"):
+        text = person(prompt, user_id=uid, people=people(prompt, entities=True))
+        assert "ENTITY MAPPINGS" not in text
+        assert "calendar." not in text
+        assert "\n\n## PEOPLE\n\nBelow is a list of the people in this home" in text
+        assert " - James (Dad)\n - Sarah (Mum)\n - Tom (Grandad)" in text
+        assert "current speaker" not in text.split("## PEOPLE")[1]
+
+
+def test_unknown_speaker_titles_sorted_alphabetically(prompt):
+    ps = [P(prompt, "a", "Zoe", "Aunt"), P(prompt, "b", "adam", "Uncle"), P(prompt, "c", None, "Gran")]
+    text = person(prompt, people=ps)
+    assert " - adam (Uncle)\n - Gran\n - Zoe (Aunt)" in text
+
+
+def test_unknown_speaker_no_people_configured_adds_nothing(prompt):
+    assert "PEOPLE" not in person(prompt, people=[])
+
+
+def test_speaker_first_then_others_alphabetical(prompt):
+    ps = [
+        P(prompt, "a", "Zoe", "Aunt"),
+        P(prompt, "b", "Adam", "Uncle"),
+        P(prompt, "c", "Mia", "Sis"),
+        P(prompt, "d", "Kim", "Gran"),
+    ]
+    text = person(prompt, user_id="c", user_name="Mia", people=ps)
+    order = [text.index(f"### {h}") for h in ("Mia (Sis)", "Adam (Uncle)", "Kim (Gran)", "Zoe (Aunt)")]
+    assert order == sorted(order)
+
+
+def test_person_without_name_headed_by_title(prompt):
+    text = person(
+        prompt,
+        user_id="u1",
+        user_name="James",
+        people=[P(prompt, "u1", "James", "Dad"), P(prompt, "u2", None, "Mum")],
+    )
+    assert "### Mum\n(no entities)" in text
+
+
+def test_no_other_people_adds_nothing(prompt):
+    text = person(prompt, user_id="u1", user_name="James", people=people(prompt)[:1])
+    assert "ENTITY MAPPINGS" not in text
+    assert "ENTITY MAPPINGS" not in person(prompt)
+
+
+def test_no_entities_anywhere_omits_usage_rules(prompt):
+    text = person(prompt, user_id="u1", user_name="James", people=people(prompt))
+    assert "### Sarah (Mum)\n(no entities)" in text
+    assert "use only the entities listed" not in text
+
+
+def test_label_equal_to_id_or_multiline_is_clean(prompt):
+    text = person(
+        prompt,
+        user_id="u1",
+        people=[
+            P(prompt, "u1", "James", "Dad", ("calendar.a", "calendar.a"), ("calendar.b", "x\ny")),
+            P(prompt, "u2", "Sarah", "Mum"),
+        ],
+    )
+    assert " - calendar.a\n - calendar.b | x y" in text
+
+
+def test_denied_speaker_reveals_no_people(prompt):
+    text = person(prompt, deny_unknown=True, people=people(prompt, entities=True))
+    assert "ENTITY MAPPINGS" not in text and "PEOPLE" not in text
+    assert "calendar." not in text
+    assert "James" not in text and "Sarah" not in text
+
+
+def test_title_same_as_name_is_not_repeated(prompt):
+    ps = [P(prompt, "u1", "Tom", "Tom"), P(prompt, "u2", "Ann", "Aunt")]
+    text = person(prompt, user_id="u1", user_name="Tom", people=ps, speakers={"u1": "Tom"})
+    assert 'answer "You are Tom."' in text
+    assert "### Tom [current speaker]" in text
+    assert "Tom (Tom)" not in text
+    assert " - Ann (Aunt)\n - Tom" in person(prompt, people=ps)

@@ -5,7 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-10-25
+
 ### Added
+- The list of people in the settings shows how many entities each person has, for example "James: Dad (3 entities)".
+- Only first names are ever used in the prompt, never the full account name.
+- A person's title is now optional. When it is left blank, the first name on their Home Assistant account is used.
+- Each person can have entities assigned (calendars, the Companion App phone's device tracker or sensors, and so on). The prompt lists them as an ENTITY MAPPINGS section with one block per person, grouped into Calendars, Devices and Other, so "What's on my calendar?" uses the speaker's own entities, "What is Sarah doing on Friday?" uses Sarah's, and a request naming several people uses each person's. Existing people keep working with no entities.
+- Speaking Person now lists the other configured people with their titles and tells the agent to refer to them by title (Dad) rather than name (James). Unknown speakers get the list of people and titles but no entities, and known speakers see themselves first, then the others alphabetically.
 - Tests for the prompt text and the config, options and subentry flows, using `pytest-homeassistant-custom-component`.
 - `.gitignore`.
 - `requirements_test.txt` for the test dependencies.
@@ -13,7 +20,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 - A committed `__pycache__` file.
 
-## [0.1.0]
+## [0.0.1] - 2026-10-18
 
 ### Added
 - **Speaking Person** LLM API. It tells the agent the speaker's title, using the Home Assistant user that Speaker Recognition sets on each request.
