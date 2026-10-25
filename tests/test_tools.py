@@ -6,7 +6,7 @@ import pytest
 from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import llm
+from homeassistant.helpers import device_registry as dr, entity_registry as er, llm
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
@@ -35,6 +35,11 @@ PEOPLE = {
         "Aunt",
         ["calendar.ann", "calendar.ann_shared", "device_tracker.ann_phone"],
         ["calendar.ann", "device_tracker.ann_phone"],
+    ),
+    "Kim": (
+        "Cousin",
+        ["device_tracker.kim_phone", "sensor.kim_phone_geocoded_location"],
+        ["sensor.kim_phone_geocoded_location"],
     ),
     "Tom": (
         "Grandad",
@@ -519,7 +524,7 @@ async def test_location_for_everyone_respects_privacy(hass, users) -> None:
     data, error = await call(hass, users["James"], "get_person_location")
     assert not error
     by_person = {p["person"]: p for p in data["people"]}
-    assert set(by_person) == {"Dad", "Mum", "Aunt", "Grandad"}
+    assert set(by_person) == {"Dad", "Mum", "Aunt", "Cousin", "Grandad"}
     assert by_person["Dad"]["location"] == "home"
     assert by_person["Mum"]["reason"] == "no location entity assigned"
     assert by_person["Aunt"] == {"person": "Aunt", "location": None, "reason": "private"}
@@ -537,6 +542,142 @@ async def test_location_unknown_person(hass, users) -> None:
     data, error = await call(hass, users["James"], "get_person_location", people=["Bob"])
     assert error
     assert _problems(data)["unknown_person"]
+
+
+# ------------------------------------------------------------------ geocoded address
+
+
+def _companion_phone(
+    hass: HomeAssistant, name: str, *, geocoded: str | None = None, **tracker_attrs
+) -> None:
+    """Register a Companion App style device: a tracker plus a geocoded location sensor."""
+    config = MockConfigEntry(domain="mobile_app")
+    config.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=config.entry_id,
+        identifiers={("mobile_app", name)},
+        name=f"{name} phone",
+    )
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "device_tracker",
+        "mobile_app",
+        f"{name}-tracker",
+        device_id=device.id,
+        config_entry=config,
+        suggested_object_id=f"{name}_phone",
+    )
+    hass.states.async_set(f"device_tracker.{name}_phone", "not_home", tracker_attrs)
+    if geocoded is not None:
+        registry.async_get_or_create(
+            "sensor",
+            "mobile_app",
+            f"{name}-hook_geocoded_location",
+            device_id=device.id,
+            config_entry=config,
+            suggested_object_id=f"{name}_phone_geocoded_location",
+        )
+        hass.states.async_set(f"sensor.{name}_phone_geocoded_location", geocoded)
+
+
+async def _where(hass, user, who="Dad"):
+    data, error = await call(hass, user, "get_person_location", people=[who])
+    assert not error
+    return data["people"][0]
+
+
+async def test_away_includes_the_companion_apps_geocoded_address(hass, users) -> None:
+    _companion_phone(hass, "james", geocoded="1 High Street\nTown\n1234\nNew Zealand")
+    hass.states.async_set(
+        "person.james", "not_home", {"source": "device_tracker.james_phone"}
+    )
+    result = await _where(hass, users["Sarah"])
+    assert result["location"] == "away"
+    assert result["address"] == "1 High Street, Town, 1234, New Zealand"
+
+
+@pytest.mark.parametrize("zone", ["home", "Work"])
+async def test_no_address_while_inside_a_zone(hass, users, zone) -> None:
+    _companion_phone(hass, "james", geocoded="1 High Street\nTown")
+    hass.states.async_set("person.james", zone, {"source": "device_tracker.james_phone"})
+    result = await _where(hass, users["Sarah"])
+    assert result["location"] == zone
+    assert "address" not in result and "address_note" not in result
+
+
+async def test_address_from_the_tracker_itself(hass, users) -> None:
+    hass.states.async_set("device_tracker.james_phone", "not_home", {"address": "5 Elm Road"})
+    result = await _where(hass, users["Sarah"])
+    assert result["address"] == "5 Elm Road"
+
+
+async def test_address_found_without_a_person_source(hass, users) -> None:
+    _companion_phone(hass, "james", geocoded="2 Oak Lane")
+    hass.states.async_set("person.james", "not_home")
+    assert (await _where(hass, users["Sarah"]))["address"] == "2 Oak Lane"
+
+
+@pytest.mark.parametrize("state", ["unknown", "unavailable", ""])
+async def test_unusable_geocoded_sensor_gives_no_address(hass, users, state) -> None:
+    _companion_phone(hass, "james", geocoded=state)
+    result = await _where(hass, users["Sarah"])
+    assert result["location"] == "away"
+    assert "address" not in result
+    assert result["address_note"].startswith("An exact address for Dad is unknown.")
+    assert "Do not guess where" in result["address_note"]
+
+
+async def test_no_address_when_the_device_reports_none(hass, users) -> None:
+    hass.states.async_set("device_tracker.james_phone", "not_home")
+    result = await _where(hass, users["Sarah"])
+    assert result["location"] == "away"
+    assert "address" not in result
+    assert result["address_note"] == (
+        "An exact address for Dad is unknown. "
+        "Say only that they are away. Do not guess where."
+    )
+
+
+async def test_geocoding_is_per_phone(hass, users) -> None:
+    """One person's phone has geocoding on and another's has it off."""
+    _companion_phone(hass, "james", geocoded="1 High Street\nTown")
+    hass.states.async_set("person.james", "not_home", {"source": "device_tracker.james_phone"})
+    hass.states.async_set("device_tracker.kim_phone", "not_home")
+    with_geo = await _where(hass, users["Sarah"], "Dad")
+    without = await _where(hass, users["Sarah"], "Cousin")
+    assert with_geo["address"] == "1 High Street, Town"
+    assert "address_note" not in with_geo
+    assert "address" not in without
+    assert without["address_note"].startswith("An exact address for Cousin is unknown.")
+
+
+async def test_disabled_geocoded_sensor_is_treated_as_off(hass, users) -> None:
+    _companion_phone(hass, "james", geocoded="1 High Street")
+    er.async_get(hass).async_update_entity(
+        "sensor.james_phone_geocoded_location",
+        disabled_by=er.RegistryEntryDisabler.USER,
+    )
+    hass.states.async_remove("sensor.james_phone_geocoded_location")
+    result = await _where(hass, users["Sarah"])
+    assert result["location"] == "away"
+    assert "address" not in result and "address_note" in result
+
+
+async def test_private_geocoded_sensor_is_not_used_for_others(hass, users) -> None:
+    _companion_phone(hass, "kim", geocoded="9 Secret Street")
+    other = await _where(hass, users["James"], "Cousin")
+    assert other["location"] == "away"
+    assert "address" not in other
+    assert "9 Secret Street" not in str(other)
+    assert "address_note" in other
+    owner = await _where(hass, users["Kim"], "me")
+    assert owner["address"] == "9 Secret Street"
+
+
+async def test_address_does_not_leak_through_a_private_tracker(hass, users) -> None:
+    _companion_phone(hass, "ann", geocoded="3 Hidden Way")
+    result = await _where(hass, users["James"], "Aunt")
+    assert result == {"person": "Aunt", "location": None, "reason": "private"}
 
 
 # ---------------------------------------------------------------------- prompt/schema

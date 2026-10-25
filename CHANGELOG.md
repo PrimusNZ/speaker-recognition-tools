@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-10-25
+
+### Added
+- `get_person_location` now includes a street address when someone is away, outside every zone, and their device tracker or the Companion App's geocoded location sensor reports one. A sensor another person has marked private is never read. When a phone has no geocoding, the result says "An exact address for [title] is unknown" and tells the agent not to guess a place.
+
 ## [0.0.4] - 2026-10-25
 
 ### Added

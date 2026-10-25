@@ -13,7 +13,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import llm
+from homeassistant.helpers import entity_registry as er, llm
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
@@ -28,6 +28,18 @@ SELF_WORDS = {"me", "my", "myself", "i", "self"}
 CALENDAR_DOMAINS = ("calendar",)
 LOCATION_DOMAINS = ("person", "device_tracker")
 _DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# Attributes some device trackers use for a street address.
+_ADDRESS_ATTRIBUTES = ("address", "geocoded_location", "formatted_address")
+# The Companion App's sensor id, after the webhook id prefix.
+_GEOCODED_SENSOR_SUFFIX = "geocoded_location"
+
+
+def _no_address_note(title: str) -> str:
+    return (
+        f"An exact address for {title} is unknown. "
+        "Say only that they are away. Do not guess where."
+    )
+
 
 _READ_ONLY = (
     llm.ToolAnnotations(
@@ -96,6 +108,13 @@ class Household:
         owner = person.user_id == self.speaker.user_id
         usable = [e for e in assigned if owner or e[0] not in person.private]
         return assigned, usable
+
+    def blocked(self, entity_id: str) -> bool:
+        """Whether another person has marked this entity private."""
+        return any(
+            entity_id in p.private and p.user_id != self.speaker.user_id
+            for p in self.people
+        )
 
     def resolve_calendars(
         self, people: list[Person], chosen: list[str] | None
@@ -181,6 +200,47 @@ def _as_datetime(value: Any) -> datetime.datetime:
     if isinstance(value, datetime.datetime):
         return value
     return dt_util.start_of_local_day(value)
+
+
+def _clean_address(text: Any) -> str | None:
+    """Join a multi-line address into one line, or None if there is nothing useful."""
+    if not isinstance(text, str) or text.strip().casefold() in (
+        "",
+        "unknown",
+        "unavailable",
+    ):
+        return None
+    parts = [part.strip() for part in re.split(r"[\r\n]+", text) if part.strip()]
+    return ", ".join(parts) or None
+
+
+def _address_for(
+    hass: HomeAssistant, household: Household, tracker_id: str
+) -> str | None:
+    """Find a street address for a device tracker, or None.
+
+    Uses an address attribute on the tracker itself, then the Companion App's
+    geocoded location sensor on the same device. A sensor another person has
+    marked private is never read.
+    """
+    if (state := hass.states.get(tracker_id)) is not None:
+        for attribute in _ADDRESS_ATTRIBUTES:
+            if address := _clean_address(state.attributes.get(attribute)):
+                return address
+    registry = er.async_get(hass)
+    entry = registry.async_get(tracker_id)
+    if entry is None or entry.device_id is None:
+        return None
+    for sibling in er.async_entries_for_device(registry, entry.device_id):
+        if (
+            sibling.domain == "sensor"
+            and (sibling.unique_id or "").endswith(_GEOCODED_SENSOR_SUFFIX)
+            and not household.blocked(sibling.entity_id)
+            and (sensor := hass.states.get(sibling.entity_id)) is not None
+            and (address := _clean_address(sensor.state))
+        ):
+            return address
+    return None
 
 
 class _PersonTool(llm.Tool):
@@ -383,8 +443,10 @@ class GetPersonLocationTool(_PersonTool):
     description = (
         "Say where one or more people are. people lists titles, names or 'me'; "
         "leave it out to get everyone, which answers who is home. Uses the "
-        "person and device tracker entities assigned to each person. A private "
-        "tracker can only be read by its owner."
+        "person and device tracker entities assigned to each person. When someone "
+        "is away, outside every zone, the result includes their street address "
+        "if their phone or tracker reports one; not every device does, and then "
+        "the result says so. A private tracker can only be read by its owner."
     )
     annotations = _READ_ONLY or llm.Tool.annotations
     parameters = vol.Schema({vol.Optional("people"): [str]})
@@ -419,17 +481,49 @@ class GetPersonLocationTool(_PersonTool):
             # Prefer the person entity, which combines all of their trackers.
             ordered = sorted(entities, key=lambda e: not e["entity_id"].startswith("person."))
             known = next((e for e in ordered if e["state"] != "unavailable"), None)
-            results.append(
-                {
-                    "person": person.title,
-                    "location": known["state"] if known else "unavailable",
-                    "entities": entities,
-                }
-            )
+            entry: dict[str, Any] = {
+                "person": person.title,
+                "location": known["state"] if known else "unavailable",
+                "entities": entities,
+            }
+            # Outside every zone: add a street address when one is reported.
+            if entry["location"] == "away":
+                address = None
+                for tracker_id in self._trackers_to_try(hass, known, usable):
+                    if address := _address_for(hass, self.household, tracker_id):
+                        break
+                if address:
+                    entry["address"] = address
+                else:
+                    # Plenty of phones have geocoding off; say so rather than leave
+                    # a gap the model might fill with a guess.
+                    entry["address_note"] = _no_address_note(person.title)
+            results.append(entry)
         data: dict[str, Any] = {"people": results}
         if problems:
             data["problems"] = problems
         return _result(data, error=not results and bool(problems))
+
+
+    def _trackers_to_try(
+        self,
+        hass: HomeAssistant,
+        known: dict[str, Any] | None,
+        usable: list[tuple[str, str]],
+    ) -> list[str]:
+        """Trackers that could hold the address, best first."""
+        found: list[str] = []
+        if known and known["entity_id"].startswith("person."):
+            # The person entity says which tracker it is currently using.
+            state = hass.states.get(known["entity_id"])
+            source = state.attributes.get("source") if state else None
+            if source and not self.household.blocked(source):
+                found.append(source)
+        for entity_id, _ in usable:
+            state = hass.states.get(entity_id)
+            if entity_id.startswith("device_tracker.") and state and state.state == "not_home":
+                found.append(entity_id)
+        return list(dict.fromkeys(found))
 
 
 def _location_name(state: str | None) -> str:
