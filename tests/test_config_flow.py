@@ -81,6 +81,10 @@ async def _person_entry(hass: HomeAssistant) -> MockConfigEntry:
 async def test_options_flow(hass: HomeAssistant) -> None:
     entry = await _person_entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "settings"}
+    )
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
@@ -125,13 +129,22 @@ async def _add_person(hass, entry, user_id, title=None, entities=None, private=N
         (entry.entry_id, SUBENTRY_SPEAKER), context={"source": "user"}
     )
     assert result["type"] is FlowResultType.FORM
-    return await hass.config_entries.subentries.async_configure(
+    result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         {CONF_USER_ID: user_id}
         | ({CONF_TITLE: title} if title is not None else {})
         | ({CONF_ENTITIES: entities} if entities else {})
         | ({CONF_PRIVATE_ENTITIES: private} if private else {}),
     )
+    if result.get("errors", {}).get("base") == "entity_warnings_acknowledge":
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"],
+            {CONF_USER_ID: user_id}
+            | ({CONF_TITLE: title} if title is not None else {})
+            | ({CONF_ENTITIES: entities} if entities else {})
+            | ({CONF_PRIVATE_ENTITIES: private} if private else {}),
+        )
+    return result
 
 
 async def test_add_person(hass: HomeAssistant) -> None:
@@ -183,9 +196,59 @@ async def _reconfigure(hass, entry, sub_id, data):
         context={"source": "reconfigure", "subentry_id": sub_id},
     )
     assert result["type"] is FlowResultType.FORM
-    return await hass.config_entries.subentries.async_configure(
-        result["flow_id"], data
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], data)
+    if result.get("errors", {}).get("base") == "entity_warnings_acknowledge":
+        result = await hass.config_entries.subentries.async_configure(result["flow_id"], data)
+    return result
+
+
+async def test_add_person_warns_about_stale_entity_before_saving(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_SPEAKER), context={"source": "user"}
     )
+    data = {CONF_USER_ID: user.id, CONF_TITLE: "Dad", CONF_ENTITIES: ["calendar.missing"]}
+    result = await hass.config_entries.subentries.async_configure(flow["flow_id"], data)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "entity_warnings_acknowledge"
+    assert "calendar.missing" in result["description_placeholders"]["entity_warnings"]
+    assert not entry.subentries
+    result = await hass.config_entries.subentries.async_configure(flow["flow_id"], data)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_add_person_warns_about_entity_assigned_to_someone_else(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    james = await _user(hass, "James")
+    sarah = await _user(hass, "Sarah")
+    await _add_person(hass, entry, james.id, "Dad", ["light.shared"])
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_SPEAKER), context={"source": "user"}
+    )
+    data = {CONF_USER_ID: sarah.id, CONF_TITLE: "Mum", CONF_ENTITIES: ["light.shared"]}
+    result = await hass.config_entries.subentries.async_configure(flow["flow_id"], data)
+    assert result["type"] is FlowResultType.FORM
+    assert "Also assigned to another person: light.shared" in result["description_placeholders"]["entity_warnings"]
+    assert len(entry.subentries) == 1
+    result = await hass.config_entries.subentries.async_configure(flow["flow_id"], data)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_preview_shows_generated_person_prompt(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        flow["flow_id"], {"next_step_id": "preview"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_USER_ID: user.id}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "preview_result"
+    assert "Address them as Dad." in result["description_placeholders"]["prompt"]
 
 
 async def test_reconfigure_person_changes_title_and_entities(

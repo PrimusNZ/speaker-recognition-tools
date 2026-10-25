@@ -33,6 +33,7 @@ from .const import (
     TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
 )
+from .prompt import Person, build_person_prompt
 
 
 class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
@@ -87,6 +88,11 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if self.config_entry.data.get(CONF_TOOL_TYPE) != TOOL_TYPE_PERSON:
             return self.async_abort(reason="no_options")
+        return self.async_show_menu(
+            step_id="init", menu_options=["settings", "preview"]
+        )
+
+    async def async_step_settings(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         opts = self.config_entry.options
         if user_input is not None:
             return self.async_create_entry(data={**opts, **user_input})
@@ -105,7 +111,74 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                 ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="settings", data_schema=schema)
+
+    async def async_step_preview(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        if user_input is not None:
+            user_id = user_input[CONF_USER_ID]
+            people = await _configured_people(self.hass, self.config_entry)
+            person = next((p for p in people if p.user_id == user_id), None)
+            if person is None:
+                return self.async_abort(reason="preview_person_missing")
+            account = await self.hass.auth.async_get_user(user_id)
+            prompt = build_person_prompt(
+                user_id=user_id,
+                user_name=(account.name.split()[0] if account and account.name else None),
+                speakers={p.user_id: p.title for p in people},
+                people=people,
+                unknown_title=self.config_entry.options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
+                deny_unknown=self.config_entry.options.get(CONF_DENY_UNKNOWN, False),
+                refusal_lines=[
+                    line.strip() for line in self.config_entry.options.get(
+                        CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES
+                    ).splitlines() if line.strip()
+                ] or DEFAULT_REFUSAL_LINES.splitlines(),
+            )
+            return self.async_show_form(
+                step_id="preview_result",
+                data_schema=vol.Schema({}),
+                description_placeholders={"prompt": prompt},
+            )
+        people = await _configured_people(self.hass, self.config_entry)
+        if not people:
+            return self.async_abort(reason="preview_no_people")
+        return self.async_show_form(
+            step_id="preview",
+            data_schema=vol.Schema({
+                vol.Required(CONF_USER_ID): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=[
+                        selector.SelectOptionDict(value=p.user_id, label=f"{p.name or p.title} ({p.title})")
+                        for p in people
+                    ])
+                )
+            }),
+        )
+
+    async def async_step_preview_result(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        return self.async_abort(reason="preview_complete")
+
+
+async def _configured_people(hass, entry) -> list[Person]:
+    """Build the same per-person data used by the live prompt for preview."""
+    people = []
+    for sub in entry.subentries.values():
+        if sub.subentry_type != SUBENTRY_SPEAKER:
+            continue
+        account = await hass.auth.async_get_user(sub.data[CONF_USER_ID])
+        name_parts = (account.name if account else "").split()
+        name = name_parts[0] if name_parts else None
+        title = sub.data.get(CONF_TITLE) or name
+        if not title:
+            continue
+        entities = tuple(
+            (entity_id, hass.states.get(entity_id).name if hass.states.get(entity_id) else entity_id)
+            for entity_id in sub.data.get(CONF_ENTITIES, [])
+        )
+        people.append(Person(
+            sub.data[CONF_USER_ID], name, title, entities,
+            frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
+        ))
+    return people
 
 
 def _private_is_assigned(user_input: dict[str, Any]) -> bool:
@@ -143,6 +216,7 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         entry = self._get_entry()
         errors: dict[str, str] = {}
+        warnings = ""
         if user_input is not None:
             taken = {
                 sub.data[CONF_USER_ID]
@@ -154,22 +228,33 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
             elif not _private_is_assigned(user_input):
                 errors[CONF_PRIVATE_ENTITIES] = "private_not_assigned"
             else:
-                title = user_input.get(CONF_TITLE, "").strip()
-                return self.async_create_entry(
-                    title=await self._title(
-                        user_input[CONF_USER_ID],
-                        title,
-                        user_input.get(CONF_ENTITIES, []),
-                        user_input.get(CONF_PRIVATE_ENTITIES, []),
-                    ),
-                    data={
-                        CONF_USER_ID: user_input[CONF_USER_ID],
-                        CONF_TITLE: title,
-                        CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
-                        CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
-                    },
-                    unique_id=user_input[CONF_USER_ID],
+                warnings = await _entity_issues(
+                    self.hass, entry, user_input.get(CONF_ENTITIES, [])
                 )
+                warning_key = (
+                    user_input[CONF_USER_ID],
+                    tuple(sorted(user_input.get(CONF_ENTITIES, []))),
+                    warnings,
+                )
+                if warnings and getattr(self, "_acknowledged_entity_warning", None) != warning_key:
+                    self._acknowledged_entity_warning = warning_key
+                    errors["base"] = "entity_warnings_acknowledge"
+                else:
+                    title = user_input.get(CONF_TITLE, "").strip()
+                    return self.async_create_entry(
+                        title=await self._title(
+                            user_input[CONF_USER_ID], title,
+                            user_input.get(CONF_ENTITIES, []),
+                            user_input.get(CONF_PRIVATE_ENTITIES, []),
+                        ),
+                        data={
+                            CONF_USER_ID: user_input[CONF_USER_ID],
+                            CONF_TITLE: title,
+                            CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
+                            CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
+                        },
+                        unique_id=user_input[CONF_USER_ID],
+                    )
         schema = vol.Schema(
             {
                 vol.Required(CONF_USER_ID): selector.SelectSelector(
@@ -184,33 +269,47 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 ),
             }
         )
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+        chosen = user_input.get(CONF_ENTITIES, []) if user_input else []
+        issues = warnings or await _entity_issues(self.hass, entry, chosen)
+        return self.async_show_form(
+            step_id="user", data_schema=schema, errors=errors,
+            description_placeholders={"entity_warnings": issues},
+        )
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         entry = self._get_entry()
         subentry = self._get_reconfigure_subentry()
         errors: dict[str, str] = {}
+        warnings = ""
         if user_input is not None and not _private_is_assigned(user_input):
             errors[CONF_PRIVATE_ENTITIES] = "private_not_assigned"
         elif user_input is not None:
-            title = user_input.get(CONF_TITLE, "").strip()
-            user_id = subentry.data[CONF_USER_ID]
-            return self.async_update_and_abort(
-                entry,
-                subentry,
-                title=await self._title(
-                    user_id,
-                    title,
-                    user_input.get(CONF_ENTITIES, []),
-                    user_input.get(CONF_PRIVATE_ENTITIES, []),
-                ),
-                data={
-                    CONF_USER_ID: user_id,
-                    CONF_TITLE: title,
-                    CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
-                    CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
-                },
+            warnings = await _entity_issues(
+                self.hass, entry, user_input.get(CONF_ENTITIES, []),
+                exclude_user_id=subentry.data[CONF_USER_ID],
             )
+            warning_key = (
+                tuple(sorted(user_input.get(CONF_ENTITIES, []))), warnings
+            )
+            if warnings and getattr(self, "_acknowledged_entity_warning", None) != warning_key:
+                self._acknowledged_entity_warning = warning_key
+                errors["base"] = "entity_warnings_acknowledge"
+            else:
+                title = user_input.get(CONF_TITLE, "").strip()
+                user_id = subentry.data[CONF_USER_ID]
+                return self.async_update_and_abort(
+                    entry, subentry,
+                    title=await self._title(
+                        user_id, title, user_input.get(CONF_ENTITIES, []),
+                        user_input.get(CONF_PRIVATE_ENTITIES, []),
+                    ),
+                    data={
+                        CONF_USER_ID: user_id,
+                        CONF_TITLE: title,
+                        CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
+                        CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
+                    },
+                )
         schema = vol.Schema(
             {
                 vol.Optional(
@@ -231,6 +330,28 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 ),
             }
         )
+        chosen = user_input.get(CONF_ENTITIES, []) if user_input else subentry.data.get(CONF_ENTITIES, [])
+        issues = warnings or await _entity_issues(self.hass, entry, chosen, exclude_user_id=subentry.data[CONF_USER_ID])
         return self.async_show_form(
-            step_id="reconfigure", data_schema=schema, errors=errors
+            step_id="reconfigure", data_schema=schema, errors=errors,
+            description_placeholders={"entity_warnings": issues},
         )
+
+
+async def _entity_issues(hass, entry, entities: list[str], exclude_user_id: str | None = None) -> str:
+    """Describe stale entity IDs and assignments shared by multiple people."""
+    stale = sorted(entity_id for entity_id in entities if hass.states.get(entity_id) is None)
+    owners = {}
+    for sub in entry.subentries.values():
+        if sub.subentry_type != SUBENTRY_SPEAKER or sub.data[CONF_USER_ID] == exclude_user_id:
+            continue
+        for entity_id in sub.data.get(CONF_ENTITIES, []):
+            if entity_id in entities:
+                owners.setdefault(entity_id, []).append(sub.title)
+    shared = sorted(owners)
+    messages = []
+    if stale:
+        messages.append("No current state found for: " + ", ".join(stale))
+    if shared:
+        messages.append("Also assigned to another person: " + ", ".join(shared))
+    return "\n".join(messages)

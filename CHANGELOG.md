@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-10-26
+
+### Added
+- Speaking Person settings now include a prompt preview for each configured person.
+- Person configuration warns about stale entity IDs and entities assigned to multiple people, and requires acknowledgement before saving those assignments.
+
 ## [0.0.7] - 2026-10-26
 
 ### Added

@@ -34,6 +34,9 @@
             "title": "Optional. Leave blank to use the first name on the account.",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App. The agent uses them for requests like \"What's on my calendar?\" or \"What is Sarah doing on Friday?\".",
             "private_entities": "Entities from the list above that only this person may use. Anyone else is refused by the calendar and location tools, and the agent is not told about them."
+          },
+          "description_placeholders": {
+            "entity_warnings": "{entity_warnings}"
           }
         },
         "reconfigure": {
@@ -47,12 +50,18 @@
             "title": "Optional. Leave blank to use the first name on the account.",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App.",
             "private_entities": "Entities from the list above that only this person may use."
+          },
+          "description_placeholders": {
+            "entity_warnings": "{entity_warnings}"
           }
         }
       },
       "error": {
         "already_configured": "That account has already been added.",
-        "private_not_assigned": "Every private entity must also be in the Entities list."
+        "private_not_assigned": "Every private entity must also be in the Entities list.",
+        "base": {
+          "entity_warnings_acknowledge": "Review the entity warnings below and submit again to keep these assignments."
+        }
       },
       "abort": {
         "reconfigure_successful": "Person updated."
@@ -63,6 +72,13 @@
     "step": {
       "init": {
         "title": "Settings",
+        "menu_options": {
+          "settings": "Speaking Person settings",
+          "preview": "Preview prompt"
+        }
+      },
+      "settings": {
+        "title": "Speaking Person settings",
         "data": {
           "deny_unknown": "Deny unknown speakers",
           "unknown_title": "Title for unknown speakers",
@@ -72,10 +88,22 @@
           "deny_unknown": "When on, only the people listed here can interact; everyone else, including requests with no user, is refused.",
           "refusal_lines": "The agent answers a denied speaker with one of these lines."
         }
+      },
+      "preview": {
+        "title": "Preview prompt",
+        "description": "Choose a configured person to see the SPEAKING PERSON and ENTITY MAPPINGS text generated for them.",
+        "data": {"user_id": "Person"}
+      },
+      "preview_result": {
+        "title": "Generated prompt",
+        "description": "{prompt}"
       }
     },
     "abort": {
-      "no_options": "This one has no options."
+      "no_options": "This one has no options.",
+      "preview_no_people": "Add a person before previewing the prompt.",
+      "preview_person_missing": "That person is no longer configured.",
+      "preview_complete": "Prompt preview closed."
     }
   }
 }
