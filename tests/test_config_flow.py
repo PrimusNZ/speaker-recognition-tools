@@ -6,9 +6,14 @@ from pathlib import Path
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import area_registry as ar, device_registry as dr
+from homeassistant.helpers import (
+    area_registry as ar,
+    device_registry as dr,
+    entity_registry as er,
+)
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.speaker_recognition_tools.config_flow import _prompt_preview_box
 from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
@@ -178,7 +183,7 @@ async def test_full_preview_omits_unconfigured_person_api(hass: HomeAssistant) -
     device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, "device-only-preview")},
-        name="Example device",
+        name="Example water heater",
     )
     flow = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -189,7 +194,11 @@ async def test_full_preview_omits_unconfigured_person_api(hass: HomeAssistant) -
     prompt = result["description_placeholders"]["prompt"]
     assert "## SPEAKING PERSON" not in prompt
     assert "## SPEAKING DEVICE" in prompt
-    assert f"id {device.id} (Example device)" in prompt
+    assert "The device the speaker is using is not known." in prompt
+    assert "Example water heater" not in prompt
+    assert "No registered Assist satellite was found" in (
+        result["description_placeholders"]["note"]
+    )
     disclaimer = result["description_placeholders"]["disclaimer"]
     assert "example rendering" in disclaimer
     assert "randomly selected registered device" in disclaimer
@@ -327,25 +336,27 @@ async def test_preview_shows_generated_person_prompt(hass: HomeAssistant) -> Non
     assert "Address them as Dad." in result["description_placeholders"]["prompt"]
 
 
-async def test_prompt_preview_descriptions_separate_prompt_in_code_blocks() -> None:
+async def test_prompt_preview_descriptions_use_shaded_wrapping_boxes() -> None:
     translation_path = (
         Path(__file__).parent.parent
         / "custom_components/speaker_recognition_tools/translations/en.json"
     )
     translations = json.loads(translation_path.read_text())
-    code_block_template = (
-        "{disclaimer}\n\nPrompt Preview:\n```\n{prompt}\n```\n\n{note}"
-    )
+    preview_template = "{disclaimer}\n\nPrompt Preview:\n\n{prompt_box}\n\n{note}"
     assert (
         translations["config"]["step"]["preview_full_result"]["description"]
-        == code_block_template
+        == preview_template
     )
     assert (
         translations["config_subentries"]["full_prompt_preview"]["step"]["user"]["description"]
-        == code_block_template
+        == preview_template
     )
     assert translations["options"]["step"]["preview_result"]["description"] == (
-        "Prompt Preview:\n```\n{prompt}\n```"
+        "Prompt Preview:\n\n{prompt_box}"
+    )
+    assert _prompt_preview_box("first line\n<second & line>") == (
+        '<ha-alert alert-type="info">first line<br>\n'
+        "&lt;second &amp; line&gt;</ha-alert>"
     )
 
 
@@ -382,12 +393,25 @@ async def test_full_prompt_preview_uses_logged_in_account_and_sample_device(
     )
     area = ar.async_get(hass).async_create("Kitchen")
     device_registry = dr.async_get(hass)
+    water_heater = device_registry.async_get_or_create(
+        config_entry_id=device_config_entry.entry_id,
+        identifiers={(DOMAIN, "preview-water-heater")},
+        name="Water heater",
+    )
+    device_registry.async_update_device(water_heater.id, area_id=area.id)
     device = device_registry.async_get_or_create(
         config_entry_id=device_config_entry.entry_id,
         identifiers={(DOMAIN, "preview-device")},
         name="Kitchen speaker",
     )
     device_registry.async_update_device(device.id, area_id=area.id)
+    er.async_get(hass).async_get_or_create(
+        "assist_satellite",
+        "test",
+        "preview-satellite",
+        device_id=device.id,
+        suggested_object_id="preview_speaker",
+    )
 
     flow = await hass.config_entries.flow.async_init(
         DOMAIN,
@@ -403,6 +427,7 @@ async def test_full_prompt_preview_uses_logged_in_account_and_sample_device(
     assert "Address them as Dad." in prompt
     assert "## SPEAKING DEVICE" in prompt
     assert f"id {device.id} (Kitchen speaker)" in prompt
+    assert "Water heater" not in prompt
     assert "the Kitchen area" in prompt
     disclaimer = result["description_placeholders"]["disclaimer"]
     note = result["description_placeholders"]["note"]

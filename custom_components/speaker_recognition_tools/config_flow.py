@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from html import escape as html_escape
 from typing import Any
 
 import voluptuous as vol
@@ -16,7 +17,12 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import area_registry as ar, device_registry as dr, selector
+from homeassistant.helpers import (
+    area_registry as ar,
+    device_registry as dr,
+    entity_registry as er,
+    selector,
+)
 
 from .const import (
     CONF_DENY_UNKNOWN,
@@ -62,6 +68,7 @@ class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "disclaimer": disclaimer,
                 "prompt": prompt,
+                "prompt_box": _prompt_preview_box(prompt),
                 "note": note,
             },
         )
@@ -161,7 +168,10 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
             return self.async_show_form(
                 step_id="preview_result",
                 data_schema=vol.Schema({}),
-                description_placeholders={"prompt": prompt},
+                description_placeholders={
+                    "prompt": prompt,
+                    "prompt_box": _prompt_preview_box(prompt),
+                },
             )
         people = await _configured_people(self.hass, self.config_entry)
         if not people:
@@ -258,6 +268,14 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
     return "\n\n".join(sections), disclaimer, " ".join(notes)
 
 
+def _prompt_preview_box(prompt: str) -> str:
+    """Render literal prompt text in a shaded, wrapping Home Assistant alert."""
+    if not prompt:
+        return ""
+    escaped_prompt = html_escape(prompt, quote=False).replace("\n", "<br>\n")
+    return f'<ha-alert alert-type="info">{escaped_prompt}</ha-alert>'
+
+
 async def _preview_account(hass, context):
     """Use the flow's signed-in user when available, or the HA owner account."""
     if user_id := context.get("user_id"):
@@ -269,15 +287,27 @@ async def _preview_account(hass, context):
 
 
 def _sample_device_prompt(hass) -> tuple[str, str]:
-    """Build a device section from a representative device in this installation."""
-    registry = dr.async_get(hass)
-    devices = list(registry.devices.values())
+    """Build a device section from an Assist satellite in this installation."""
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    assist_device_ids = {
+        entity.device_id
+        for entity in entity_registry.entities.values()
+        if entity.domain == "assist_satellite"
+        and entity.disabled_by is None
+        and entity.device_id is not None
+    }
+    devices = [
+        device_registry.devices[device_id]
+        for device_id in assist_device_ids
+        if device_id in device_registry.devices
+    ]
     with_area = [device for device in devices if _device_area_id(hass, device)]
     candidates = with_area or devices
     if not candidates:
         return (
             build_device_prompt(device_id=None, device_name=None),
-            "No registered device was found, so the device section says the device is unknown.",
+            "No registered Assist satellite was found, so the device section says the device is unknown.",
         )
     device = random.choice(candidates)
     area_id = _device_area_id(hass, device)
@@ -494,6 +524,7 @@ class FullPromptPreviewSubentryFlow(ConfigSubentryFlow):
             description_placeholders={
                 "disclaimer": disclaimer,
                 "prompt": prompt,
+                "prompt_box": _prompt_preview_box(prompt),
                 "note": note,
             },
         )
