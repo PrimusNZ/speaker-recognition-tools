@@ -232,3 +232,44 @@ def test_title_same_as_name_is_not_repeated(prompt):
     assert "### Tom [current speaker]" in text
     assert "Tom (Tom)" not in text
     assert " - Ann (Aunt)\n - Tom" in person(prompt, people=ps)
+
+
+def _private_people(prompt):
+    return [
+        P(prompt, "u1", "James", "Dad", ("calendar.james", "James")),
+        prompt.Person(
+            "u2",
+            "Sarah",
+            "Mum",
+            (("calendar.home", "Home"), ("calendar.diary", "Diary")),
+            frozenset({"calendar.diary"}),
+        ),
+    ]
+
+
+def test_other_peoples_private_entities_are_left_out(prompt):
+    text = person(prompt, user_id="u1", user_name="James", people=_private_people(prompt))
+    assert " - calendar.home | Home" in text
+    assert "calendar.diary" not in text
+
+
+def test_own_private_entities_are_marked(prompt):
+    text = person(prompt, user_id="u2", user_name="Sarah", people=_private_people(prompt))
+    assert " - calendar.diary | Diary (private)" in text
+    assert " - calendar.home | Home\n" in text + "\n"
+
+
+def test_person_with_only_private_entities_shows_none_to_others(prompt):
+    ps = [
+        P(prompt, "u1", "James", "Dad"),
+        prompt.Person("u2", "Sarah", "Mum", (("calendar.diary", "Diary"),), frozenset({"calendar.diary"})),
+    ]
+    text = person(prompt, user_id="u1", user_name="James", people=ps)
+    assert "### Sarah (Mum)\n(no entities)" in text
+    assert "calendar.diary" not in text
+
+
+def test_prompt_names_the_tools(prompt):
+    text = person(prompt, user_id="u1", user_name="James", people=_private_people(prompt))
+    for name in ("get_calendar_events", "create_calendar_event", "get_person_location"):
+        assert name in text

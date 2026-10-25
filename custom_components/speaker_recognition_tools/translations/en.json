@@ -27,27 +27,32 @@
           "data": {
             "user_id": "Home Assistant user account",
             "title": "Title",
-            "entities": "Entities"
+            "entities": "Entities",
+            "private_entities": "Private entities"
           },
           "data_description": {
             "title": "Optional. Leave blank to use the first name on the account.",
-            "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App. The agent uses them for requests like \"What's on my calendar?\" or \"What is Sarah doing on Friday?\"."
+            "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App. The agent uses them for requests like \"What's on my calendar?\" or \"What is Sarah doing on Friday?\".",
+            "private_entities": "Entities from the list above that only this person may use. Anyone else is refused by the calendar and location tools, and the agent is not told about them."
           }
         },
         "reconfigure": {
           "title": "Change person",
           "data": {
             "title": "Title",
-            "entities": "Entities"
+            "entities": "Entities",
+            "private_entities": "Private entities"
           },
           "data_description": {
             "title": "Optional. Leave blank to use the first name on the account.",
-            "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App."
+            "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App.",
+            "private_entities": "Entities from the list above that only this person may use."
           }
         }
       },
       "error": {
-        "already_configured": "That account has already been added."
+        "already_configured": "That account has already been added.",
+        "private_not_assigned": "Every private entity must also be in the Entities list."
       },
       "abort": {
         "reconfigure_successful": "Person updated."

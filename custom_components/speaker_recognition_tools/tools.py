@@ -1,0 +1,449 @@
+"""LLM tools that work on a person's assigned entities and enforce who may use them.
+
+A person's entities are shared unless they are marked private. A private entity
+can only be used by its owner. Every tool checks this itself, so a request about
+someone else's private calendar is refused whatever the model asks for.
+"""
+
+from __future__ import annotations
+
+import datetime
+import re
+from typing import Any
+
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import llm
+from homeassistant.util import dt as dt_util
+
+from .const import DOMAIN
+from .prompt import Person
+
+try:  # recent Home Assistant
+    import probatio as vol
+except ImportError:  # older Home Assistant
+    import voluptuous as vol
+
+SELF_WORDS = {"me", "my", "myself", "i", "self"}
+CALENDAR_DOMAINS = ("calendar",)
+LOCATION_DOMAINS = ("person", "device_tracker")
+_DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+_READ_ONLY = (
+    llm.ToolAnnotations(
+        read_only=True, destructive=False, idempotent=True, open_world=False
+    )
+    if hasattr(llm, "ToolAnnotations")
+    else None
+)
+_WRITE = (
+    llm.ToolAnnotations(
+        read_only=False, destructive=False, idempotent=False, open_world=False
+    )
+    if hasattr(llm, "ToolAnnotations")
+    else None
+)
+
+
+def _result(data: dict[str, Any], error: bool = False):
+    """Return a tool result; older Home Assistant returns the bare dict."""
+    if hasattr(llm, "ToolResult"):
+        return llm.ToolResult(data=data, error=error)
+    return {**data, "error": True} if error else data
+
+
+class Household:
+    """The configured people, seen from one speaker."""
+
+    def __init__(self, people: list[Person], speaker: Person) -> None:
+        self.people = people
+        self.speaker = speaker
+
+    def find(
+        self, names: list[str] | None
+    ) -> tuple[list[Person], list[dict[str, Any]]]:
+        """Resolve titles, first names and "me" to people. Report what failed."""
+        found: list[Person] = []
+        problems: list[dict[str, Any]] = []
+        for raw in names or []:
+            key = str(raw).strip().casefold()
+            if key in SELF_WORDS:
+                matches = [self.speaker]
+            else:
+                matches = [
+                    p
+                    for p in self.people
+                    if key in (p.title.casefold(), (p.name or "").casefold())
+                ]
+            if len(matches) == 1:
+                if matches[0] not in found:
+                    found.append(matches[0])
+            else:
+                problems.append(
+                    {
+                        "problem": "ambiguous_person" if matches else "unknown_person",
+                        "name": raw,
+                        "known_people": [p.title for p in self.people],
+                    }
+                )
+        return found, problems
+
+    def entities(
+        self, person: Person, domains: tuple[str, ...]
+    ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+        """Return (assigned, usable) entities of the given domains for this speaker."""
+        assigned = [e for e in person.entities if e[0].split(".", 1)[0] in domains]
+        owner = person.user_id == self.speaker.user_id
+        usable = [e for e in assigned if owner or e[0] not in person.private]
+        return assigned, usable
+
+    def resolve_calendars(
+        self, people: list[Person], chosen: list[str] | None
+    ) -> tuple[list[tuple[Person, str, str]], list[dict[str, Any]]]:
+        """Pick the calendar(s) to use for each person, or say what is in the way."""
+        chosen = [str(c) for c in chosen or []]
+        targets: list[tuple[Person, str, str]] = []
+        problems: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for person in people:
+            assigned, usable = self.entities(person, CALENDAR_DOMAINS)
+            seen.update(e[0] for e in usable)
+            if not assigned:
+                problems.append(
+                    {
+                        "person": person.title,
+                        "problem": "no_calendar",
+                        "message": f"{person.title} has no calendar assigned.",
+                    }
+                )
+            elif not usable:
+                problems.append(
+                    {
+                        "person": person.title,
+                        "problem": "private",
+                        "message": f"{person.title}'s calendar is private.",
+                    }
+                )
+            else:
+                picked = [e for e in usable if e[0] in chosen]
+                if not picked and len(usable) == 1:
+                    picked = usable
+                if picked:
+                    targets.extend((person, e[0], e[1]) for e in picked)
+                else:
+                    problems.append(
+                        {
+                            "person": person.title,
+                            "problem": "choose_calendar",
+                            "message": (
+                                f"{person.title} has more than one calendar. Ask "
+                                "the speaker which one, then call again with the "
+                                "chosen entity_id in calendars."
+                            ),
+                            "options": [
+                                {"entity_id": e[0], "name": e[1]} for e in usable
+                            ],
+                        }
+                    )
+        for entity_id in chosen:
+            if entity_id not in seen:
+                problems.append(
+                    {
+                        "problem": "calendar_not_available",
+                        "entity_id": entity_id,
+                        "message": "That calendar is not available for this request.",
+                    }
+                )
+        return targets, problems
+
+
+def _parse_when(value: str, *, end: bool = False) -> tuple[Any, bool]:
+    """Parse an ISO date or datetime. Returns (value, is_date_only).
+
+    A date-only end covers that whole day, so it becomes the start of the next day.
+    Naive datetimes are local time.
+    """
+    text = str(value).strip()
+    if _DATE_ONLY.match(text):
+        day = dt_util.parse_date(text)
+        if day is None:
+            raise ValueError(f"Invalid date: {value}")
+        return day + datetime.timedelta(days=1 if end else 0), True
+    parsed = dt_util.parse_datetime(text)
+    if parsed is None:
+        raise ValueError(f"Invalid date or time: {value}")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return parsed, False
+
+
+def _as_datetime(value: Any) -> datetime.datetime:
+    if isinstance(value, datetime.datetime):
+        return value
+    return dt_util.start_of_local_day(value)
+
+
+class _PersonTool(llm.Tool):
+    """Shared set-up for tools that act on behalf of one recognised speaker."""
+
+    integration = DOMAIN
+
+    def __init__(self, household: Household) -> None:
+        self.household = household
+
+    def _people(self, args: dict[str, Any], default_to_everyone: bool = False):
+        names = args.get("people")
+        if not names:
+            return (
+                (list(self.household.people), [])
+                if default_to_everyone
+                else ([self.household.speaker], [])
+            )
+        return self.household.find(names)
+
+
+class GetCalendarEventsTool(_PersonTool):
+    """Read the events on the calendars of one or more people."""
+
+    name = "get_calendar_events"
+    title = "Get calendar events"
+    description = (
+        "Get the events on one or more people's calendars between a start and an "
+        "end. people lists titles, names or 'me'; leave it out for the speaker. "
+        "start and end are ISO 8601 local dates or date times; a date-only end "
+        "includes that whole day. Private calendars can only be read by their "
+        "owner. If a person has more than one calendar the result asks for a "
+        "choice; ask the speaker, then call again with the chosen entity_id in "
+        "calendars."
+    )
+    annotations = _READ_ONLY or llm.Tool.annotations
+    parameters = vol.Schema(
+        {
+            vol.Optional("people"): [str],
+            vol.Required("start"): str,
+            vol.Required("end"): str,
+            vol.Optional("calendars"): [str],
+        }
+    )
+
+    async def async_call(
+        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+    ):
+        args = tool_input.tool_args
+        try:
+            start = _as_datetime(_parse_when(args["start"])[0])
+            end = _as_datetime(_parse_when(args["end"], end=True)[0])
+        except ValueError as err:
+            return _result({"error": str(err)}, error=True)
+        if end <= start:
+            return _result({"error": "end must be after start"}, error=True)
+
+        people, problems = self._people(args)
+        targets, more = self.household.resolve_calendars(people, args.get("calendars"))
+        problems += more
+
+        results = []
+        for person, entity_id, label in targets:
+            try:
+                response = await hass.services.async_call(
+                    "calendar",
+                    "get_events",
+                    {
+                        "entity_id": entity_id,
+                        "start_date_time": start.isoformat(),
+                        "end_date_time": end.isoformat(),
+                    },
+                    context=llm_context.context,
+                    blocking=True,
+                    return_response=True,
+                )
+                events = response[entity_id]["events"]
+            except (HomeAssistantError, KeyError, ValueError) as err:
+                problems.append(
+                    {
+                        "person": person.title,
+                        "problem": "read_failed",
+                        "entity_id": entity_id,
+                        "message": str(err),
+                    }
+                )
+                continue
+            results.append(
+                {
+                    "person": person.title,
+                    "calendar": label,
+                    "entity_id": entity_id,
+                    "events": events,
+                }
+            )
+        data: dict[str, Any] = {"calendars": results}
+        if problems:
+            data["problems"] = problems
+        return _result(data, error=not results and bool(problems))
+
+
+class CreateCalendarEventTool(_PersonTool):
+    """Create one event on the calendars of one or more people."""
+
+    name = "create_calendar_event"
+    title = "Create calendar event"
+    description = (
+        "Create an event on one or more people's calendars. people lists titles, "
+        "names or 'me'; leave it out for the speaker. start is an ISO 8601 local "
+        "date time, or a date for an all-day event. end is optional: one hour "
+        "after start, or the same day for an all-day event. Nothing is created "
+        "unless every named person's calendar can be used: a private calendar "
+        "can only be written by its owner, and a person with more than one "
+        "calendar needs the speaker to choose; ask, then call again with the "
+        "chosen entity_id in calendars."
+    )
+    annotations = _WRITE or llm.Tool.annotations
+    parameters = vol.Schema(
+        {
+            vol.Optional("people"): [str],
+            vol.Required("summary"): str,
+            vol.Required("start"): str,
+            vol.Optional("end"): str,
+            vol.Optional("calendars"): [str],
+            vol.Optional("description"): str,
+            vol.Optional("location"): str,
+        }
+    )
+
+    async def async_call(
+        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+    ):
+        args = tool_input.tool_args
+        try:
+            start, all_day = _parse_when(args["start"])
+            if args.get("end"):
+                end, end_all_day = _parse_when(args["end"], end=True)
+                if end_all_day != all_day:
+                    raise ValueError("start and end must both be dates or both be date times")
+            elif all_day:
+                end = start + datetime.timedelta(days=1)
+            else:
+                end = start + datetime.timedelta(hours=1)
+        except ValueError as err:
+            return _result({"error": str(err)}, error=True)
+        if end <= start:
+            return _result({"error": "end must be after start"}, error=True)
+
+        people, problems = self._people(args)
+        targets, more = self.household.resolve_calendars(people, args.get("calendars"))
+        problems += more
+        if problems or not targets:
+            return _result(
+                {
+                    "created": [],
+                    "problems": problems
+                    or [{"problem": "no_calendar", "message": "No calendar to use."}],
+                    "note": "Nothing was created. Resolve the problems, then call again.",
+                },
+                error=True,
+            )
+
+        data: dict[str, Any] = {"summary": args["summary"]}
+        if all_day:
+            data["start_date"] = start.isoformat()
+            data["end_date"] = end.isoformat()
+        else:
+            data["start_date_time"] = start.isoformat()
+            data["end_date_time"] = end.isoformat()
+        for key in ("description", "location"):
+            if args.get(key):
+                data[key] = args[key]
+
+        created, failed = [], []
+        for person, entity_id, label in targets:
+            try:
+                await hass.services.async_call(
+                    "calendar",
+                    "create_event",
+                    {**data, "entity_id": entity_id},
+                    context=llm_context.context,
+                    blocking=True,
+                )
+                created.append({"person": person.title, "calendar": label})
+            except (HomeAssistantError, ValueError) as err:
+                failed.append(
+                    {"person": person.title, "calendar": label, "error": str(err)}
+                )
+        result: dict[str, Any] = {"created": created}
+        if failed:
+            result["failed"] = failed
+        return _result(result, error=bool(failed))
+
+
+class GetPersonLocationTool(_PersonTool):
+    """Say where people are, from their person and device tracker entities."""
+
+    name = "get_person_location"
+    title = "Get person location"
+    description = (
+        "Say where one or more people are. people lists titles, names or 'me'; "
+        "leave it out to get everyone, which answers who is home. Uses the "
+        "person and device tracker entities assigned to each person. A private "
+        "tracker can only be read by its owner."
+    )
+    annotations = _READ_ONLY or llm.Tool.annotations
+    parameters = vol.Schema({vol.Optional("people"): [str]})
+
+    async def async_call(
+        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+    ):
+        people, problems = self._people(tool_input.tool_args, default_to_everyone=True)
+        results = []
+        for person in people:
+            assigned, usable = self.household.entities(person, LOCATION_DOMAINS)
+            if not assigned:
+                results.append(
+                    {"person": person.title, "location": None, "reason": "no location entity assigned"}
+                )
+                continue
+            if not usable:
+                results.append(
+                    {"person": person.title, "location": None, "reason": "private"}
+                )
+                continue
+            entities = []
+            for entity_id, label in usable:
+                state = hass.states.get(entity_id)
+                entities.append(
+                    {
+                        "entity_id": entity_id,
+                        "name": label,
+                        "state": _location_name(state.state if state else None),
+                    }
+                )
+            # Prefer the person entity, which combines all of their trackers.
+            ordered = sorted(entities, key=lambda e: not e["entity_id"].startswith("person."))
+            known = next((e for e in ordered if e["state"] != "unavailable"), None)
+            results.append(
+                {
+                    "person": person.title,
+                    "location": known["state"] if known else "unavailable",
+                    "entities": entities,
+                }
+            )
+        data: dict[str, Any] = {"people": results}
+        if problems:
+            data["problems"] = problems
+        return _result(data, error=not results and bool(problems))
+
+
+def _location_name(state: str | None) -> str:
+    """Make a tracker state readable: not_home is away, unknown is unavailable."""
+    if state in (None, "unknown", "unavailable"):
+        return "unavailable"
+    return "away" if state == "not_home" else state
+
+
+def build_tools(people: list[Person], speaker: Person) -> list[llm.Tool]:
+    """Return the tools for one recognised speaker."""
+    household = Household(people, speaker)
+    return [
+        GetCalendarEventsTool(household),
+        CreateCalendarEventTool(household),
+        GetPersonLocationTool(household),
+    ]

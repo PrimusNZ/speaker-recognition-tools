@@ -184,10 +184,16 @@ async def test_only_first_names_reach_the_prompt(hass: HomeAssistant) -> None:
     assert "### Sarah (Mum)" in await _prompt(hass, james.id)
 
 
-async def test_person_api_has_no_tools_and_a_name(hass: HomeAssistant) -> None:
+async def test_person_api_tools_only_for_recognised_speakers(hass: HomeAssistant) -> None:
     james = await _setup(hass)
     instance = await _instance(hass, james.id)
-    assert instance.tools == []
+    assert [t.name for t in instance.tools] == [
+        "get_calendar_events",
+        "create_calendar_event",
+        "get_person_location",
+    ]
+    assert (await _instance(hass, None)).tools == []
+    assert (await _instance(hass, "no-such-user")).tools == []
     assert instance.api.name == PERSON_API_NAME
     assert any(a.id == PERSON_API_ID for a in llm.async_get_apis(hass))
 
@@ -203,6 +209,13 @@ async def test_person_api_reads_options_live(hass: HomeAssistant) -> None:
     text = await _prompt(hass, None)
     assert "SECURITY LOCKDOWN" in text
     assert '- "Nope."' in text
+
+
+async def test_denied_speaker_gets_no_tools(hass: HomeAssistant) -> None:
+    await _setup(hass, deny=True)
+    stranger = await hass.auth.async_create_user("Eve", group_ids=["system-users"])
+    assert (await _instance(hass, None)).tools == []
+    assert (await _instance(hass, stranger.id)).tools == []
 
 
 async def test_person_api_denies_user_who_is_not_listed(hass: HomeAssistant) -> None:

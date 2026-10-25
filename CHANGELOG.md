@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Tools for recognised speakers**: `get_calendar_events`, `create_calendar_event` and `get_person_location`. They work on the entities assigned to each person, accept several people in one request (for example "Sarah's and my calendars"), and return a choice to ask the speaker when a person has more than one calendar. Creating an event is all-or-nothing. Unidentified and refused speakers get no tools.
+- **Private entities**: each person can mark some of their assigned entities as private. Only the owner can use them through the tools, other people's private entities are left out of the prompt, and the owner's own are marked `(private)`. The settings list shows the count, for example "James: Dad (3 entities, 1 private)".
+- `EXAMPLE_PROMPT.txt` now covers the tools and private entities.
+- A prominent README warning that assigned entities bypass Assist's exposed-entities setting.
+
 ## [0.0.3] - 2026-10-25
 
 ### Added

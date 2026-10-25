@@ -20,6 +20,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
+    CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_TITLE,
     CONF_TOOL_TYPE,
@@ -107,6 +108,13 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=schema)
 
 
+def _private_is_assigned(user_input: dict[str, Any]) -> bool:
+    """Private entities must also be in the person's entity list."""
+    return set(user_input.get(CONF_PRIVATE_ENTITIES, [])) <= set(
+        user_input.get(CONF_ENTITIES, [])
+    )
+
+
 class SpeakerSubentryFlow(ConfigSubentryFlow):
     """Add or change one person: a Home Assistant user account and an optional title."""
 
@@ -118,14 +126,18 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
             if not u.system_generated and u.is_active
         ]
 
-    async def _title(self, user_id: str, title: str, entities: list[str]) -> str:
-        """Return the list label, e.g. "James: Dad (3 entities)"."""
+    async def _title(
+        self, user_id: str, title: str, entities: list[str], private: list[str]
+    ) -> str:
+        """Return the list label, e.g. "James: Dad (3 entities, 1 private)"."""
         user = await self.hass.auth.async_get_user(user_id)
         name = user.name if user else user_id
         count = len(entities)
         amount = (
             "no entities" if not count else f"{count} {'entity' if count == 1 else 'entities'}"
         )
+        if private:
+            amount += f", {len(private)} private"
         return f"{f'{name}: {title}' if title else name} ({amount})"
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -139,6 +151,8 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
             }
             if user_input[CONF_USER_ID] in taken:
                 errors[CONF_USER_ID] = "already_configured"
+            elif not _private_is_assigned(user_input):
+                errors[CONF_PRIVATE_ENTITIES] = "private_not_assigned"
             else:
                 title = user_input.get(CONF_TITLE, "").strip()
                 return self.async_create_entry(
@@ -146,11 +160,13 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                         user_input[CONF_USER_ID],
                         title,
                         user_input.get(CONF_ENTITIES, []),
+                        user_input.get(CONF_PRIVATE_ENTITIES, []),
                     ),
                     data={
                         CONF_USER_ID: user_input[CONF_USER_ID],
                         CONF_TITLE: title,
                         CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
+                        CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
                     },
                     unique_id=user_input[CONF_USER_ID],
                 )
@@ -163,6 +179,9 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 vol.Optional(CONF_ENTITIES): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
                 ),
+                vol.Optional(CONF_PRIVATE_ENTITIES): selector.EntitySelector(
+                    selector.EntitySelectorConfig(multiple=True)
+                ),
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
@@ -170,19 +189,26 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         entry = self._get_entry()
         subentry = self._get_reconfigure_subentry()
-        if user_input is not None:
+        errors: dict[str, str] = {}
+        if user_input is not None and not _private_is_assigned(user_input):
+            errors[CONF_PRIVATE_ENTITIES] = "private_not_assigned"
+        elif user_input is not None:
             title = user_input.get(CONF_TITLE, "").strip()
             user_id = subentry.data[CONF_USER_ID]
             return self.async_update_and_abort(
                 entry,
                 subentry,
                 title=await self._title(
-                    user_id, title, user_input.get(CONF_ENTITIES, [])
+                    user_id,
+                    title,
+                    user_input.get(CONF_ENTITIES, []),
+                    user_input.get(CONF_PRIVATE_ENTITIES, []),
                 ),
                 data={
                     CONF_USER_ID: user_id,
                     CONF_TITLE: title,
                     CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
+                    CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
                 },
             )
         schema = vol.Schema(
@@ -197,6 +223,14 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
                 ),
+                vol.Optional(
+                    CONF_PRIVATE_ENTITIES,
+                    default=subentry.data.get(CONF_PRIVATE_ENTITIES, []),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(multiple=True)
+                ),
             }
         )
-        return self.async_show_form(step_id="reconfigure", data_schema=schema)
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=schema, errors=errors
+        )

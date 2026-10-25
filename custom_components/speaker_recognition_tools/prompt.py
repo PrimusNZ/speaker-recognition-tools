@@ -19,6 +19,7 @@ class Person(NamedTuple):
     name: str | None
     title: str
     entities: tuple[tuple[str, str], ...] = ()  # (entity_id, label)
+    private: frozenset[str] = frozenset()  # entity ids only this person may use
 
 
 _GROUPS = (
@@ -32,21 +33,24 @@ def _group(entity_id: str) -> str:
     return next((name for name, domains in _GROUPS if domain in domains), "Other")
 
 
-def _line(entity_id: str, label: str) -> str:
+def _line(entity_id: str, label: str, private: bool = False) -> str:
     label = " ".join(label.split())
-    return f" - {entity_id} | {label}" if label and label != entity_id else f" - {entity_id}"
+    text = f" - {entity_id} | {label}" if label and label != entity_id else f" - {entity_id}"
+    return f"{text} (private)" if private else text
 
 
 def _person_block(person: Person, current: bool) -> str:
     heading = _label(person.name, person.title)
     lines = [f"### {heading}{' [current speaker]' if current else ''}"]
-    if not person.entities:
+    # Other people's private entities are never shown.
+    visible = [e for e in person.entities if current or e[0] not in person.private]
+    if not visible:
         lines.append("(no entities)")
     for group in (*(name for name, _ in _GROUPS), "Other"):
-        members = [e for e in person.entities if _group(e[0]) == group]
+        members = [e for e in visible if _group(e[0]) == group]
         if members:
             lines.append(f"{group}:")
-            lines.extend(_line(*e) for e in members)
+            lines.extend(_line(*e, e[0] in person.private) for e in members)
     return "\n".join(lines)
 
 
@@ -96,7 +100,15 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "type needed (several calendars, several device trackers and so "
             "on) and the request does not say which, ask which one is meant "
             "before acting. If a person has no matching entity, say so "
-            "instead of guessing."
+            "instead of guessing. Entities marked (private) belong only to "
+            "that person: never use or reveal them for anyone else. Use the "
+            "get_calendar_events and create_calendar_event tools for "
+            "calendars and the get_person_location tool for where people "
+            "are. They enforce who may access what, and may report that "
+            "something is private or ask for a choice. When a tool asks for "
+            "a choice, ask the speaker as a question that ends with a "
+            "question mark, then call the tool again with the chosen entity "
+            "ids in calendars."
         )
     ordered = [me, *_alphabetical(p for p in people if p is not me)]
     blocks = "\n\n".join(_person_block(p, p is me) for p in ordered)

@@ -8,6 +8,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
+    CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_TITLE,
     CONF_TOOL_TYPE,
@@ -119,7 +120,7 @@ async def _user(hass: HomeAssistant, name: str):
     return await hass.auth.async_create_user(name, group_ids=["system-users"])
 
 
-async def _add_person(hass, entry, user_id, title=None, entities=None):
+async def _add_person(hass, entry, user_id, title=None, entities=None, private=None):
     result = await hass.config_entries.subentries.async_init(
         (entry.entry_id, SUBENTRY_SPEAKER), context={"source": "user"}
     )
@@ -128,7 +129,8 @@ async def _add_person(hass, entry, user_id, title=None, entities=None):
         result["flow_id"],
         {CONF_USER_ID: user_id}
         | ({CONF_TITLE: title} if title is not None else {})
-        | ({CONF_ENTITIES: entities} if entities else {}),
+        | ({CONF_ENTITIES: entities} if entities else {})
+        | ({CONF_PRIVATE_ENTITIES: private} if private else {}),
     )
 
 
@@ -139,7 +141,12 @@ async def test_add_person(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "James: Dad (no entities)"
     sub = next(iter(entry.subentries.values()))
-    assert dict(sub.data) == {CONF_USER_ID: user.id, CONF_TITLE: "Dad", CONF_ENTITIES: []}
+    assert dict(sub.data) == {
+        CONF_USER_ID: user.id,
+        CONF_TITLE: "Dad",
+        CONF_ENTITIES: [],
+        CONF_PRIVATE_ENTITIES: [],
+    }
 
 
 async def test_add_person_duplicate_user_rejected(hass: HomeAssistant) -> None:
@@ -201,6 +208,7 @@ async def test_reconfigure_person_changes_title_and_entities(
         CONF_USER_ID: user.id,
         CONF_TITLE: "Father",
         CONF_ENTITIES: ["calendar.james", "calendar.work"],
+        CONF_PRIVATE_ENTITIES: [],
     }
     assert sub.title == "James: Father (2 entities)"
 
@@ -233,3 +241,66 @@ async def test_reconfigure_can_clear_title(hass: HomeAssistant) -> None:
     sub = entry.subentries[sub_id]
     assert sub.data[CONF_TITLE] == ""
     assert sub.title == "James (no entities)"
+
+
+async def test_add_person_with_private_entities(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    result = await _add_person(
+        hass,
+        entry,
+        user.id,
+        "Dad",
+        ["calendar.james", "calendar.work"],
+        ["calendar.work"],
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "James: Dad (2 entities, 1 private)"
+    sub = next(iter(entry.subentries.values()))
+    assert sub.data[CONF_PRIVATE_ENTITIES] == ["calendar.work"]
+
+
+async def test_private_entity_must_be_assigned(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    result = await _add_person(
+        hass, entry, user.id, "Dad", ["calendar.james"], ["calendar.other"]
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_PRIVATE_ENTITIES: "private_not_assigned"}
+    assert not entry.subentries
+
+
+async def test_reconfigure_private_entities(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad", ["calendar.a", "calendar.b"])
+    sub_id = next(iter(entry.subentries))
+    result = await _reconfigure(
+        hass,
+        entry,
+        sub_id,
+        {
+            CONF_TITLE: "Dad",
+            CONF_ENTITIES: ["calendar.a", "calendar.b"],
+            CONF_PRIVATE_ENTITIES: ["calendar.b"],
+        },
+    )
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.subentries[sub_id].data[CONF_PRIVATE_ENTITIES] == ["calendar.b"]
+    assert entry.subentries[sub_id].title == "James: Dad (2 entities, 1 private)"
+
+
+async def test_reconfigure_rejects_unassigned_private(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad", ["calendar.a"])
+    sub_id = next(iter(entry.subentries))
+    result = await _reconfigure(
+        hass,
+        entry,
+        sub_id,
+        {CONF_ENTITIES: ["calendar.a"], CONF_PRIVATE_ENTITIES: ["calendar.z"]},
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_PRIVATE_ENTITIES: "private_not_assigned"}

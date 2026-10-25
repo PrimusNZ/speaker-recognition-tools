@@ -9,6 +9,7 @@ from homeassistant.helpers import device_registry as dr, llm
 from .const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
+    CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_TITLE,
     CONF_USER_ID,
@@ -22,6 +23,7 @@ from .const import (
     PERSON_API_NAME,
 )
 from .prompt import Person, build_device_prompt, build_person_prompt
+from .tools import build_tools
 
 
 def _first_name(name: str | None) -> str | None:
@@ -31,7 +33,7 @@ def _first_name(name: str | None) -> str | None:
 
 
 class SpeakingPersonAPI(llm.API):
-    """No tools; adds the speaker's title, or a refusal for unknown speakers."""
+    """Adds the speaker's title and, for recognised speakers, person-aware tools."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(hass=hass, id=PERSON_API_ID, name=PERSON_API_NAME)
@@ -66,7 +68,13 @@ class SpeakingPersonAPI(llm.API):
             if not title:
                 continue  # no title and no account name to fall back on
             people.append(
-                Person(sub.data[CONF_USER_ID], name, title, tuple(entities))
+                Person(
+                    sub.data[CONF_USER_ID],
+                    name,
+                    title,
+                    tuple(entities),
+                    frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
+                )
             )
 
         lines = [
@@ -83,8 +91,11 @@ class SpeakingPersonAPI(llm.API):
             deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
             refusal_lines=lines or DEFAULT_REFUSAL_LINES.splitlines(),
         )
+        # Tools are only offered to recognised speakers, never to unknown ones.
+        speaker = next((p for p in people if p.user_id == user_id), None)
+        tools = build_tools(people, speaker) if speaker else []
         return llm.APIInstance(
-            api=self, api_prompt=prompt, llm_context=llm_context, tools=[]
+            api=self, api_prompt=prompt, llm_context=llm_context, tools=tools
         )
 
 
