@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Tests for both LLM APIs and for entry setup, unload, reload and removal.
+
+### Changed
+- The default title for unknown speakers is now "Unknown Person" instead of "Infiltrator". Existing entries keep the title they already have.
+
 ## [0.0.2] - 2026-10-25
 
 ### Added

@@ -18,7 +18,7 @@ CONF_UNKNOWN_TITLE = "unknown_title"
 CONF_DENY_UNKNOWN = "deny_unknown"
 CONF_REFUSAL_LINES = "refusal_lines"  # one line per row
 
-DEFAULT_UNKNOWN_TITLE = "Infiltrator"
+DEFAULT_UNKNOWN_TITLE = "Unknown Person"
 DEFAULT_REFUSAL_LINES = (
     "Authorisation required.\n"
     "You are not authorised to access that area.\n"

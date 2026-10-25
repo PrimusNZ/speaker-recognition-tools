@@ -14,7 +14,7 @@ Gives the agent the speaker's title.
 
 - Add each person as a line under the entry: assign a Home Assistant user account to a title (for example James to Dad, Sarah to Mum). The title is optional; if you leave it blank, the first name on the account is used. Speaker Recognition links voice profiles to user accounts, not person entities, so pick the account its voice profile is linked to.
 - Optionally assign entities to each person, such as their calendars and their phone from the Home Assistant Companion App. The agent uses them to answer "What's on my calendar on Thursday?", "What is Sarah doing on Friday afternoon?" or "Create an appointment on Sarah's and my calendars". The prompt lists an ENTITY MAPPINGS section with one block per person, and the agent is told to refer to people by title.
-- Unknown speakers get a title of your choice (default Infiltrator).
+- Unknown speakers get a title of your choice (default Unknown Person).
 - **Deny unknown speakers** (off by default). When on, only the listed accounts can interact. Anyone else, including a request with no user, is refused with one of your refusal lines, one per row. This is an instruction to the agent, not a security barrier.
 
 Each person you add appears as a line under Speaking Person on the integration page (use Add person, then the line's menu to change the title or delete it). The settings (gear icon) cover the unknown title, Deny unknown speakers and the refusal lines.

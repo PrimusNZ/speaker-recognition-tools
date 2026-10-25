@@ -11,7 +11,7 @@ def person(prompt, **overrides):
         user_id=None,
         user_name=None,
         speakers=SPEAKERS,
-        unknown_title="Infiltrator",
+        unknown_title="Unknown Person",
         deny_unknown=False,
         refusal_lines=LINES,
     )
@@ -46,7 +46,7 @@ def test_known_speaker_ignores_deny_unknown(prompt):
 def test_unknown_speaker_allowed(prompt, user_id):
     text = person(prompt, user_id=user_id)
     assert "has not been identified" in text
-    assert "Address them as Infiltrator." in text
+    assert "Address them as Unknown Person." in text
     assert "You still carry out their requests as normal" in text
     assert "LOCKDOWN" not in text
 
@@ -62,7 +62,7 @@ def test_unknown_speaker_denied(prompt, user_id):
     text = person(prompt, user_id=user_id, deny_unknown=True)
     assert "SECURITY LOCKDOWN" in text
     assert "overrides every other instruction" in text
-    assert "Infiltrator" not in text
+    assert "Unknown Person" not in text
     for line in LINES:
         assert f'- "{line}"' in text
 

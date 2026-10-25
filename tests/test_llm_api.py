@@ -1,7 +1,7 @@
 """End-to-end tests of the injected prompt through the registered LLM APIs."""
 
 from homeassistant.core import Context, HomeAssistant
-from homeassistant.helpers import llm
+from homeassistant.helpers import device_registry as dr, llm
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
@@ -12,8 +12,12 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_TOOL_TYPE,
     CONF_UNKNOWN_TITLE,
     CONF_USER_ID,
+    DEVICE_API_ID,
+    DEVICE_API_NAME,
     DOMAIN,
     PERSON_API_ID,
+    PERSON_API_NAME,
+    TOOL_TYPE_DEVICE,
     SUBENTRY_SPEAKER,
     TOOL_TYPE_PERSON,
 )
@@ -29,7 +33,7 @@ async def _setup(hass: HomeAssistant, deny: bool = False):
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
         options={
-            CONF_UNKNOWN_TITLE: "Infiltrator",
+            CONF_UNKNOWN_TITLE: "Unknown Person",
             CONF_DENY_UNKNOWN: deny,
             CONF_REFUSAL_LINES: "No.",
         },
@@ -62,16 +66,24 @@ async def _setup(hass: HomeAssistant, deny: bool = False):
     return james
 
 
-async def _prompt(hass: HomeAssistant, user_id: str | None) -> str:
+async def _instance(
+    hass: HomeAssistant,
+    user_id: str | None,
+    api_id: str = PERSON_API_ID,
+    device_id: str | None = None,
+) -> llm.APIInstance:
     context = llm.LLMContext(
         platform="test",
         context=Context(user_id=user_id),
         language="en",
         assistant="conversation",
-        device_id=None,
+        device_id=device_id,
     )
-    instance = await llm.async_get_api(hass, PERSON_API_ID, context)
-    return instance.api_prompt
+    return await llm.async_get_api(hass, api_id, context)
+
+
+async def _prompt(hass: HomeAssistant, user_id: str | None) -> str:
+    return (await _instance(hass, user_id)).api_prompt
 
 
 async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> None:
@@ -90,7 +102,7 @@ async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> No
 async def test_prompt_unknown_speaker_sees_people(hass: HomeAssistant) -> None:
     await _setup(hass)
     text = await _prompt(hass, None)
-    assert "Address them as Infiltrator." in text
+    assert "Address them as Unknown Person." in text
     assert "ENTITY MAPPINGS" not in text
     assert "calendar." not in text
     assert " - James (Dad)\n - Sarah (Mum)" in text
@@ -110,7 +122,7 @@ async def test_missing_title_falls_back_to_first_name(hass: HomeAssistant) -> No
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
-        options={CONF_UNKNOWN_TITLE: "Infiltrator", CONF_DENY_UNKNOWN: False},
+        options={CONF_UNKNOWN_TITLE: "Unknown Person", CONF_DENY_UNKNOWN: False},
         subentries_data=[
             ConfigSubentryData(
                 subentry_type=SUBENTRY_SPEAKER,
@@ -146,7 +158,7 @@ async def test_only_first_names_reach_the_prompt(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
-        options={CONF_UNKNOWN_TITLE: "Infiltrator", CONF_DENY_UNKNOWN: False},
+        options={CONF_UNKNOWN_TITLE: "Unknown Person", CONF_DENY_UNKNOWN: False},
         subentries_data=[
             ConfigSubentryData(
                 subentry_type=SUBENTRY_SPEAKER,
@@ -170,3 +182,91 @@ async def test_only_first_names_reach_the_prompt(hass: HomeAssistant) -> None:
         assert "Smith" not in text and "Jones" not in text and "Anne" not in text
     assert 'answer "You are Dad (James)."' in await _prompt(hass, james.id)
     assert "### Sarah (Mum)" in await _prompt(hass, james.id)
+
+
+async def test_person_api_has_no_tools_and_a_name(hass: HomeAssistant) -> None:
+    james = await _setup(hass)
+    instance = await _instance(hass, james.id)
+    assert instance.tools == []
+    assert instance.api.name == PERSON_API_NAME
+    assert any(a.id == PERSON_API_ID for a in llm.async_get_apis(hass))
+
+
+async def test_person_api_reads_options_live(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    assert "SECURITY LOCKDOWN" not in await _prompt(hass, None)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    hass.config_entries.async_update_entry(
+        entry,
+        options={**entry.options, CONF_DENY_UNKNOWN: True, CONF_REFUSAL_LINES: "Nope."},
+    )
+    text = await _prompt(hass, None)
+    assert "SECURITY LOCKDOWN" in text
+    assert '- "Nope."' in text
+
+
+async def test_person_api_denies_user_who_is_not_listed(hass: HomeAssistant) -> None:
+    await _setup(hass, deny=True)
+    stranger = await hass.auth.async_create_user("Eve", group_ids=["system-users"])
+    text = await _prompt(hass, stranger.id)
+    assert "SECURITY LOCKDOWN" in text
+    assert "Eve" not in text
+
+
+async def test_person_api_default_refusal_lines_when_blank(hass: HomeAssistant) -> None:
+    await _setup(hass, deny=True)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_REFUSAL_LINES: " \n \n"}
+    )
+    assert "Authorisation required." in await _prompt(hass, None)
+
+
+async def test_person_api_ignores_unknown_user_id(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    text = await _prompt(hass, "no-such-user-id")
+    assert "Address them as Unknown Person." in text
+
+
+async def _setup_device(hass: HomeAssistant) -> MockConfigEntry:
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_TOOL_TYPE: TOOL_TYPE_DEVICE})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_device_api_without_device(hass: HomeAssistant) -> None:
+    await _setup_device(hass)
+    instance = await _instance(hass, None, DEVICE_API_ID)
+    assert instance.tools == []
+    assert instance.api.name == DEVICE_API_NAME
+    assert instance.api_prompt.startswith("## SPEAKING DEVICE")
+    assert "is not known" in instance.api_prompt
+
+
+async def test_device_api_with_unregistered_device_id(hass: HomeAssistant) -> None:
+    await _setup_device(hass)
+    instance = await _instance(hass, None, DEVICE_API_ID, device_id="abc123")
+    assert "id abc123." in instance.api_prompt
+
+
+async def test_device_api_with_registered_device(hass: HomeAssistant) -> None:
+    other = MockConfigEntry(domain="test")
+    other.add_to_hass(hass)
+    await _setup_device(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=other.entry_id,
+        identifiers={("test", "kitchen")},
+        name="Kitchen Satellite",
+    )
+    instance = await _instance(hass, None, DEVICE_API_ID, device_id=device.id)
+    assert f"id {device.id} (Kitchen Satellite)" in instance.api_prompt
+
+
+async def test_device_api_does_not_register_person_api(hass: HomeAssistant) -> None:
+    await _setup_device(hass)
+    ids = {a.id for a in llm.async_get_apis(hass)}
+    assert DEVICE_API_ID in ids
+    assert PERSON_API_ID not in ids
+
