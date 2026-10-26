@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-import zoneinfo
 
 import pytest
 from homeassistant.config_entries import ConfigSubentryData
@@ -420,6 +419,7 @@ async def test_linked_device_routes_same_name_to_status_and_action_entities(hass
                 "binary_sensor.demo_unit_status",
                 "button.demo_unit_action",
                 False,
+                ("Lab station", "Test console"),
             ),
         ),
     )
@@ -428,18 +428,19 @@ async def test_linked_device_routes_same_name_to_status_and_action_entities(hass
     control_tool = tools_module.ControlAssignedEntityTool(household)
 
     state_result, state_error = await _call_entity_tool(
-        hass, users["James"], read_tool, entity="Demo unit"
+        hass, users["James"], read_tool, entity="Lab station"
     )
     action_result, action_error = await _call_entity_tool(
         hass,
         users["James"],
         control_tool,
-        entity="Demo unit",
+        entity="Test console",
         service="button.press",
     )
 
     assert not state_error
     assert state_result["entity_id"] == "binary_sensor.demo_unit_status"
+    assert state_result["entity"] == "Demo unit"
     assert state_result["state"] == "off"
     assert not action_error
     assert calls == [{"entity_id": "button.demo_unit_action"}]
@@ -458,6 +459,7 @@ async def test_private_linked_device_is_only_available_to_its_owner(hass, users)
                 "binary_sensor.demo_unit_status",
                 "button.demo_unit_action",
                 True,
+                ("Lab station", "Test console"),
             ),
         ),
     )
@@ -465,7 +467,7 @@ async def test_private_linked_device_is_only_available_to_its_owner(hass, users)
     tool = tools_module.GetEntityStateTool(household)
 
     result, error = await _call_entity_tool(
-        hass, users["Sarah"], tool, person="Dad", entity="Demo unit"
+        hass, users["Sarah"], tool, person="Dad", entity="Lab station"
     )
 
     assert error
@@ -1148,19 +1150,19 @@ async def _where(hass, user, who="Dad"):
 
 
 async def test_outside_zones_uses_the_companion_apps_geocoded_address(hass, users) -> None:
-    _companion_phone(hass, "james", geocoded="1 High Street\nTown\n1234\nNew Zealand")
+    _companion_phone(hass, "james", geocoded="42 Example Road\nSampleton\n0000\nTestland")
     hass.states.async_set(
         "person.james", "not_home", {"source": "device_tracker.james_phone"}
     )
     result = await _where(hass, users["Sarah"])
-    assert result["location"] == "High Street, Town"
-    assert result["address"] == "High Street, Town"
+    assert result["location"] == "Example Road, Sampleton"
+    assert result["address"] == "Example Road, Sampleton"
     assert "away" not in str(result)
 
 
 @pytest.mark.parametrize("zone", ["home", "Work"])
 async def test_no_address_while_inside_a_zone(hass, users, zone) -> None:
-    _companion_phone(hass, "james", geocoded="1 High Street\nTown")
+    _companion_phone(hass, "james", geocoded="42 Example Road\nSampleton")
     hass.states.async_set("person.james", zone, {"source": "device_tracker.james_phone"})
     result = await _where(hass, users["Sarah"])
     assert result["location"] == zone
@@ -1168,15 +1170,15 @@ async def test_no_address_while_inside_a_zone(hass, users, zone) -> None:
 
 
 async def test_address_from_the_tracker_itself(hass, users) -> None:
-    hass.states.async_set("device_tracker.james_phone", "not_home", {"address": "5 Elm Road"})
+    hass.states.async_set("device_tracker.james_phone", "not_home", {"address": "17 Fixture Lane"})
     result = await _where(hass, users["Sarah"])
-    assert result["address"] == "Elm Road"
+    assert result["address"] == "Fixture Lane"
 
 
 async def test_address_found_without_a_person_source(hass, users) -> None:
-    _companion_phone(hass, "james", geocoded="2 Oak Lane")
+    _companion_phone(hass, "james", geocoded="8 Sample Crescent")
     hass.states.async_set("person.james", "not_home")
-    assert (await _where(hass, users["Sarah"]))["address"] == "Oak Lane"
+    assert (await _where(hass, users["Sarah"]))["address"] == "Sample Crescent"
 
 
 @pytest.mark.parametrize("state", ["unknown", "unavailable", ""])
@@ -1203,12 +1205,12 @@ async def test_no_address_when_the_device_reports_none(hass, users) -> None:
 
 async def test_geocoding_is_per_phone(hass, users) -> None:
     """One person's phone has geocoding on and another's has it off."""
-    _companion_phone(hass, "james", geocoded="1 High Street\nTown")
+    _companion_phone(hass, "james", geocoded="42 Example Road\nSampleton")
     hass.states.async_set("person.james", "not_home", {"source": "device_tracker.james_phone"})
     hass.states.async_set("device_tracker.kim_phone", "not_home")
     with_geo = await _where(hass, users["Sarah"], "Dad")
     without = await _where(hass, users["Sarah"], "Cousin")
-    assert with_geo["address"] == "High Street, Town"
+    assert with_geo["address"] == "Example Road, Sampleton"
     assert "address_note" not in with_geo
     assert "address" not in without
     assert '"Sorry Mum, An exact address for Cousin is unknown."' in without["address_note"]
@@ -1218,27 +1220,27 @@ async def test_companion_attributes_give_street_and_town(hass, users) -> None:
     _companion_phone(hass, "james", geocoded="ignored\nlines")
     hass.states.async_set(
         "sensor.james_phone_geocoded_location",
-        "12 Elm Road\nSpringfield\n12345\nUSA",
+        "17 Fixture Lane\nSampleton\n00000\nTestland",
         {
-            "Thoroughfare": "Elm Road",
-            "Sub Thoroughfare": "12",
-            "Locality": "Springfield",
-            "Postal Code": "12345",
-            "Country": "USA",
+            "Thoroughfare": "Fixture Lane",
+            "Sub Thoroughfare": "17",
+            "Locality": "Sampleton",
+            "Postal Code": "00000",
+            "Country": "Testland",
         },
     )
-    assert (await _where(hass, users["Sarah"]))["address"] == "Elm Road, Springfield"
+    assert (await _where(hass, users["Sarah"]))["address"] == "Fixture Lane, Sampleton"
 
 
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("12 Elm Road, Springfield, 12345, USA", "Elm Road, Springfield"),
-        ("12A Elm Road\nSpringfield\nSW1A 1AA\nUnited Kingdom", "Elm Road, Springfield"),
-        ("4/12 Elm Road, Springfield", "Elm Road, Springfield"),
-        ("Elm Road", "Elm Road"),
-        ("42 Elm Road", "Elm Road"),
-        ("Elm Road, 12345", "Elm Road"),
+        ("17 Fixture Lane, Sampleton, 00000, Testland", "Fixture Lane, Sampleton"),
+        ("17 Fixture Lane\nSampleton\n00000\nTestland", "Fixture Lane, Sampleton"),
+        ("4/17 Fixture Lane, Sampleton", "Fixture Lane, Sampleton"),
+        ("Fixture Lane", "Fixture Lane"),
+        ("42 Fixture Lane", "Fixture Lane"),
+        ("Fixture Lane, 00000", "Fixture Lane"),
     ],
 )
 async def test_street_and_town_from_plain_text(hass, users, text, expected) -> None:
@@ -1248,16 +1250,16 @@ async def test_street_and_town_from_plain_text(hass, users, text, expected) -> N
 
 async def test_town_only_attribute(hass, users) -> None:
     hass.states.async_set(
-        "device_tracker.james_phone", "not_home", {"Locality": "Springfield", "address": "x"}
+        "device_tracker.james_phone", "not_home", {"Locality": "Sampleton", "address": "x"}
     )
-    assert (await _where(hass, users["Sarah"]))["address"] == "Springfield"
+    assert (await _where(hass, users["Sarah"]))["address"] == "Sampleton"
 
 
 async def test_address_never_includes_number_postcode_or_country(hass, users) -> None:
-    _companion_phone(hass, "james", geocoded="1 High Street\nTown\n1234\nNew Zealand")
+    _companion_phone(hass, "james", geocoded="42 Example Road\nSampleton\n0000\nTestland")
     hass.states.async_set("person.james", "not_home", {"source": "device_tracker.james_phone"})
     text = str(await _where(hass, users["Sarah"]))
-    assert "1234" not in text and "New Zealand" not in text and "1 High" not in text
+    assert "0000" not in text and "Testland" not in text and "42 Example" not in text
 
 
 async def test_asking_about_yourself_says_you(hass, users) -> None:
@@ -1273,7 +1275,7 @@ async def test_reply_names_the_speaker_and_the_target(hass, users) -> None:
 
 
 async def test_disabled_geocoded_sensor_is_treated_as_off(hass, users) -> None:
-    _companion_phone(hass, "james", geocoded="1 High Street")
+    _companion_phone(hass, "james", geocoded="42 Example Road")
     er.async_get(hass).async_update_entity(
         "sensor.james_phone_geocoded_location",
         disabled_by=er.RegistryEntryDisabler.USER,
@@ -1285,18 +1287,18 @@ async def test_disabled_geocoded_sensor_is_treated_as_off(hass, users) -> None:
 
 
 async def test_private_geocoded_sensor_is_not_used_for_others(hass, users) -> None:
-    _companion_phone(hass, "kim", geocoded="9 Secret Street")
+    _companion_phone(hass, "kim", geocoded="9 Private Lane")
     other = await _where(hass, users["James"], "Cousin")
     assert other["location"] == "outside known zones"
     assert "address" not in other
-    assert "9 Secret Street" not in str(other)
+    assert "9 Private Lane" not in str(other)
     assert "address_note" in other
     owner = await _where(hass, users["Kim"], "me")
-    assert owner["address"] == "Secret Street"
+    assert owner["address"] == "Private Lane"
 
 
 async def test_address_does_not_leak_through_a_private_tracker(hass, users) -> None:
-    _companion_phone(hass, "ann", geocoded="3 Hidden Way")
+    _companion_phone(hass, "ann", geocoded="3 Example Crescent")
     result = await _where(hass, users["James"], "Aunt")
     assert result == {"person": "Aunt", "location": None, "reason": "private"}
 
@@ -1312,7 +1314,7 @@ def local(day: int, hour: int, minute: int = 0, month: int = 10) -> datetime.dat
 def _auckland_time():
     """Run every test in one known time zone, and put the old one back after."""
     previous = dt_util.DEFAULT_TIME_ZONE
-    dt_util.set_default_time_zone(zoneinfo.ZoneInfo("Pacific/Auckland"))
+    dt_util.set_default_time_zone(datetime.timezone(datetime.timedelta(hours=13), "Fixture/+13"))
     yield
     dt_util.set_default_time_zone(previous)
 
@@ -1395,10 +1397,10 @@ async def test_location_says_how_long_they_have_been_home(hass, users, freezer) 
 
 async def test_location_says_how_long_they_have_been_at_the_reported_address(hass, users, freezer) -> None:
     await _set_at(hass, freezer, local(26, 8, 0), "person.james", "not_home")
-    hass.states.async_set("device_tracker.james_phone", "not_home", {"address": "High Street"})
+    hass.states.async_set("device_tracker.james_phone", "not_home", {"address": "Example Road"})
     freezer.move_to(dt_util.as_utc(now()))
     result = await _where(hass, users["Sarah"])
-    assert result["since_spoken"] == "High Street since eight o'clock this morning"
+    assert result["since_spoken"] == "Example Road since eight o'clock this morning"
     assert "away" not in str(result)
 
 
@@ -1418,11 +1420,11 @@ async def test_location_since_just_now(hass, users, freezer) -> None:
 async def test_location_since_uses_the_entity_that_gave_the_location(hass, users, freezer) -> None:
     await _set_at(hass, freezer, local(26, 9, 0), "person.james", "not_home")
     await _set_at(
-        hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home", {"address": "High Street"}
+        hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home", {"address": "Example Road"}
     )
     freezer.move_to(dt_util.as_utc(now()))
     result = await _where(hass, users["Sarah"])
-    assert result["since_spoken"] == "High Street since nine o'clock this morning"
+    assert result["since_spoken"] == "Example Road since nine o'clock this morning"
 
 
 async def test_no_since_when_unavailable_private_or_unassigned(hass, users, freezer) -> None:

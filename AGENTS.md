@@ -35,6 +35,7 @@ Run the full suite with `.venv/bin/pytest` after code or behaviour changes. Add 
 
 - Match the surrounding code's style, naming and comment density.
 - Add or update tests with every behaviour change.
+- Do not use real-world data or examples provided by the user in tests, documentation, or other project examples unless explicitly asked. Generate sensible synthetic data instead.
 - Use only first names in anything shown to the model, never full account names.
 - Privacy is enforced in the tools, not just the prompt. A private entity can be read or written only by its owner, and other people's private entities are left out of prompts. Keep that true for any new tool.
 - Calendar create, update and delete take two calls: a preview with a confirmation token, then the change. Keep that flow for any new write tool.

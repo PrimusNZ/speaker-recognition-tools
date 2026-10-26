@@ -12,6 +12,7 @@ from .const import (
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_ALIASES,
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
@@ -59,7 +60,7 @@ class SpeakingPersonAPI(llm.API):
             user_name = _first_name(user.name)
 
         people = []
-        links_by_user: dict[str, list[tuple[str, str, str, bool]]] = {}
+        links_by_user: dict[str, list[tuple[str, str, str, bool, tuple[str, ...]]]] = {}
         for sub in self._entry.subentries.values():
             if sub.subentry_type != SUBENTRY_ENTITY_LINK:
                 continue
@@ -70,6 +71,7 @@ class SpeakingPersonAPI(llm.API):
                     data[CONF_LINK_STATE_ENTITY],
                     data[CONF_LINK_ACTION_ENTITY],
                     data.get(CONF_LINK_PRIVATE, False),
+                    tuple(data.get(CONF_LINK_ALIASES, [])),
                 )
             )
         for sub in self._entry.subentries.values():

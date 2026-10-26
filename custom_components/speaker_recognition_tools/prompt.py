@@ -23,7 +23,7 @@ class Person(NamedTuple):
     private: frozenset[str] = frozenset()  # entity ids only this person may use
     third_person_reference: str | None = None
     entity_aliases: tuple[tuple[str, tuple[str, ...]], ...] = ()
-    entity_links: tuple[tuple[str, str, str, bool], ...] = ()  # (name, status id, action id, private)
+    entity_links: tuple[tuple[str, str, str, bool, tuple[str, ...]], ...] = ()
 
     @property
     def direct_address(self) -> str:
@@ -122,9 +122,12 @@ def _linked_devices_text(person: Person, current: bool) -> str:
     if not links:
         return ""
     lines = ["Linked devices:"]
-    for name, state_entity, action_entity, private in links:
+    for name, state_entity, action_entity, private, aliases in links:
+        alias_text = f" (also called {', '.join(aliases)})" if aliases else ""
         suffix = " (private)" if private else ""
-        lines.append(f" - {name}: status {state_entity}; actions {action_entity}{suffix}")
+        lines.append(
+            f" - {name}{alias_text}: status {state_entity}; actions {action_entity}{suffix}"
+        )
     return "\n".join(lines)
 
 
@@ -167,8 +170,10 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
     intro += f' "my", "me" or "I" means {me.direct_address}, the current speaker.'
     if any(p.entities or p.entity_links for p in people):
         intro += (
-        "The first alias shown for an entity is its preferred name; any other "
-        "aliases shown for it are alternate names for that same entity. When a "
+            "The first alias shown for an entity is its preferred name; any other "
+            "aliases shown for it are alternate names for that same entity. A linked "
+            "device's listed alternate names refer to the same device and work for "
+            "both status and action requests. When a "
         "tool asks which entity to use, pass its exact entity_id or a configured "
         "alias. For a request about a person, use only the entities "
         "listed under "

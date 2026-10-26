@@ -575,7 +575,13 @@ class _PersonTool(llm.Tool):
         links = [
             link
             for link in person.entity_links
-            if key in {link[0].casefold(), link[1].casefold(), link[2].casefold()}
+            if key
+            in {
+                link[0].casefold(),
+                link[1].casefold(),
+                link[2].casefold(),
+                *(alias.casefold() for alias in link[4]),
+            }
         ]
         if links:
             if len(links) > 1:
@@ -584,7 +590,7 @@ class _PersonTool(llm.Tool):
                     "message": "More than one linked device matches. Ask which device, then try again.",
                     "options": [{"name": link[0]} for link in links],
                 }
-            name, state_entity, action_entity, private = links[0]
+            name, state_entity, action_entity, private, _aliases = links[0]
             entity_id = state_entity if operation == "read" else action_entity
             if not entity_id:
                 return None, {
@@ -613,7 +619,7 @@ class GetEntityStateTool(_PersonTool):
         "or configured third-person reference and defaults to the current speaker. "
         "Only read entities "
         "assigned to that person; private entities can only be read by their owner. "
-        "For a linked device, its shared name resolves to the status entity here. "
+        "For a linked device, its spoken name or any alias resolves to the status entity here. "
         "The result may include its configured Home Assistant area and state attributes. "
         "Use get_person_location for a person's presence, zones and addresses, and "
         "calendar tools for calendar events. Do not infer a room from a home state alone."
@@ -679,7 +685,7 @@ class ControlAssignedEntityTool(_PersonTool):
         "service such as button.press, switch.turn_on, light.turn_off, climate.set_temperature, "
         "or homeassistant.turn_on. Supply service-specific fields in service_data. "
         "Only entities assigned to the selected person may be controlled. For a "
-        "linked device, its shared name resolves to the action entity here. The "
+        "linked device, its spoken name or any alias resolves to the action entity here. The "
         "optional person parameter accepts a first name, configured form of address, or configured "
         "third-person reference and defaults to the current speaker. Private entities can only be "
         "controlled by their owner. The service is always targeted to that one entity; "

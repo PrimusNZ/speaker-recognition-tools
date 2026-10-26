@@ -21,6 +21,7 @@ CONF_ENTITIES = "entities"  # optional list of entity ids
 CONF_ENTITY_ALIASES = "entity_aliases"  # entity id to alternate names
 CONF_PRIVATE_ENTITIES = "private_entities"  # subset of entities only the owner may use
 CONF_LINK_NAME = "link_name"
+CONF_LINK_ALIASES = "link_aliases"  # alternate names for the linked device
 CONF_LINK_STATE_ENTITY = "state_entity"
 CONF_LINK_ACTION_ENTITY = "action_entity"
 CONF_LINK_PRIVATE = "private"

@@ -15,6 +15,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0.2] - 2026-10-26
+
+### Fixed
+- Complete linked-device support by routing aliases to the configured status and action entities.
+- Place linked-device reconfigure translations under the supported flow step section.
+
+### Documentation
+- Use synthetic location examples in the README and tests.
+
 ## [0.5.0.2] - 2026-10-26
 
 ### Fixed

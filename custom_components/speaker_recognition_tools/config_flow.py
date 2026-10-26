@@ -30,6 +30,7 @@ from .const import (
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_ALIASES,
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
@@ -353,7 +354,7 @@ def _device_area_id(hass, device) -> str | None:
 async def _configured_people(hass, entry) -> list[Person]:
     """Build the same per-person data used by the live prompt for preview."""
     people = []
-    links_by_user: dict[str, list[tuple[str, str, str, bool]]] = {}
+    links_by_user: dict[str, list[tuple[str, str, str, bool, tuple[str, ...]]]] = {}
     for sub in entry.subentries.values():
         if sub.subentry_type == SUBENTRY_ENTITY_LINK:
             data = sub.data
@@ -363,6 +364,7 @@ async def _configured_people(hass, entry) -> list[Person]:
                     data[CONF_LINK_STATE_ENTITY],
                     data[CONF_LINK_ACTION_ENTITY],
                     data.get(CONF_LINK_PRIVATE, False),
+                    tuple(data.get(CONF_LINK_ALIASES, [])),
                 )
             )
     for sub in entry.subentries.values():
@@ -431,6 +433,21 @@ def _entity_aliases_text(aliases: dict[str, list[str]] | None) -> str:
         for entity_id, names in (aliases or {}).items()
         if names
     )
+
+
+def _parse_link_aliases(text: str, primary_name: str) -> tuple[str, ...]:
+    """Parse comma or newline separated alternate names for a linked device."""
+    aliases: list[str] = []
+    seen = {primary_name.strip().casefold()}
+    for raw_alias in text.replace("\n", ",").split(","):
+        alias = " ".join(raw_alias.split())
+        if not alias:
+            continue
+        key = alias.casefold()
+        if key not in seen:
+            aliases.append(alias)
+            seen.add(key)
+    return tuple(aliases)
 
 
 class SpeakerSubentryFlow(ConfigSubentryFlow):
@@ -652,12 +669,23 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
         owner = parts[0] if parts else "Person"
         return f"{name} ({owner})"
 
-    def _link_name_in_use(self, user_id: str, name: str, exclude: str | None = None) -> bool:
+    def _link_names_in_use(
+        self, user_id: str, names: list[str], exclude: str | None = None
+    ) -> bool:
+        requested = {name.strip().casefold() for name in names if name.strip()}
         return any(
             sub.subentry_type == SUBENTRY_ENTITY_LINK
             and sub.subentry_id != exclude
             and sub.data.get(CONF_USER_ID) == user_id
-            and sub.data.get(CONF_LINK_NAME, "").strip().casefold() == name.strip().casefold()
+            and requested.intersection(
+                {
+                    sub.data.get(CONF_LINK_NAME, "").strip().casefold(),
+                    *(
+                        alias.strip().casefold()
+                        for alias in sub.data.get(CONF_LINK_ALIASES, [])
+                    ),
+                }
+            )
             for sub in self._get_entry().subentries.values()
         )
 
@@ -666,11 +694,12 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             name = user_input.get(CONF_LINK_NAME, "").strip()
+            aliases = _parse_link_aliases(user_input.get(CONF_LINK_ALIASES, ""), name)
             state_entity = user_input.get(CONF_LINK_STATE_ENTITY)
             action_entity = user_input.get(CONF_LINK_ACTION_ENTITY)
             if not name:
                 errors[CONF_LINK_NAME] = "link_name_required"
-            elif self._link_name_in_use(user_input[CONF_USER_ID], name):
+            elif self._link_names_in_use(user_input[CONF_USER_ID], [name, *aliases]):
                 errors[CONF_LINK_NAME] = "duplicate_link_name"
             elif state_entity == action_entity:
                 errors[CONF_LINK_ACTION_ENTITY] = "link_entities_must_differ"
@@ -680,6 +709,7 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                     data={
                         CONF_USER_ID: user_input[CONF_USER_ID],
                         CONF_LINK_NAME: name,
+                        CONF_LINK_ALIASES: list(aliases),
                         CONF_LINK_STATE_ENTITY: state_entity,
                         CONF_LINK_ACTION_ENTITY: action_entity,
                         CONF_LINK_PRIVATE: user_input.get(CONF_LINK_PRIVATE, False),
@@ -691,6 +721,9 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                     selector.SelectSelectorConfig(options=await self._person_options())
                 ),
                 vol.Required(CONF_LINK_NAME): selector.TextSelector(),
+                vol.Optional(CONF_LINK_ALIASES, default=""): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
+                ),
                 vol.Required(CONF_LINK_STATE_ENTITY): selector.EntitySelector(),
                 vol.Required(CONF_LINK_ACTION_ENTITY): selector.EntitySelector(),
                 vol.Optional(CONF_LINK_PRIVATE, default=False): selector.BooleanSelector(),
@@ -705,12 +738,13 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             name = user_input.get(CONF_LINK_NAME, "").strip()
+            aliases = _parse_link_aliases(user_input.get(CONF_LINK_ALIASES, ""), name)
             state_entity = user_input.get(CONF_LINK_STATE_ENTITY)
             action_entity = user_input.get(CONF_LINK_ACTION_ENTITY)
             if not name:
                 errors[CONF_LINK_NAME] = "link_name_required"
-            elif self._link_name_in_use(
-                user_input[CONF_USER_ID], name, exclude=subentry.subentry_id
+            elif self._link_names_in_use(
+                user_input[CONF_USER_ID], [name, *aliases], exclude=subentry.subentry_id
             ):
                 errors[CONF_LINK_NAME] = "duplicate_link_name"
             elif state_entity == action_entity:
@@ -723,6 +757,7 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                     data={
                         CONF_USER_ID: user_input[CONF_USER_ID],
                         CONF_LINK_NAME: name,
+                        CONF_LINK_ALIASES: list(aliases),
                         CONF_LINK_STATE_ENTITY: state_entity,
                         CONF_LINK_ACTION_ENTITY: action_entity,
                         CONF_LINK_PRIVATE: user_input.get(CONF_LINK_PRIVATE, False),
@@ -740,6 +775,10 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                     CONF_LINK_NAME,
                     default=data[CONF_LINK_NAME],
                 ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_LINK_ALIASES,
+                    default=", ".join(data.get(CONF_LINK_ALIASES, [])),
+                ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
                 vol.Required(
                     CONF_LINK_STATE_ENTITY,
                     default=data[CONF_LINK_STATE_ENTITY],

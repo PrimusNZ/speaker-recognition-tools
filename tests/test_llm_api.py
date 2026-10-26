@@ -10,6 +10,7 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_ALIASES,
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
@@ -74,6 +75,7 @@ async def _setup(hass: HomeAssistant, deny: bool = False, linked: bool = False):
                     data={
                         CONF_USER_ID: james.id,
                         CONF_LINK_NAME: "Demo unit",
+                        CONF_LINK_ALIASES: ["Lab station", "Test console"],
                         CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
                         CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
                         CONF_LINK_PRIVATE: False,
@@ -126,7 +128,7 @@ async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> No
 async def test_linked_device_is_injected_with_shared_status_and_action_name(hass: HomeAssistant) -> None:
     james = await _setup(hass, linked=True)
     text = await _prompt(hass, james.id)
-    assert "Linked devices:\n - Demo unit: status binary_sensor.demo_unit_status; actions button.demo_unit_action" in text
+    assert "Linked devices:\n - Demo unit (also called Lab station, Test console): status binary_sensor.demo_unit_status; actions button.demo_unit_action" in text
 
 
 async def test_pre_address_as_settings_remain_supported(hass: HomeAssistant) -> None:

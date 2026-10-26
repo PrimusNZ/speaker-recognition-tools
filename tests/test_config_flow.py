@@ -20,6 +20,7 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_ALIASES,
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
@@ -305,6 +306,7 @@ async def test_add_linked_device_with_status_and_action_entities(hass: HomeAssis
         {
             CONF_USER_ID: user.id,
             CONF_LINK_NAME: "Demo unit",
+            CONF_LINK_ALIASES: "Demo unit, Lab station, Test console\nlab STATION",
             CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
             CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
             CONF_LINK_PRIVATE: False,
@@ -319,10 +321,83 @@ async def test_add_linked_device_with_status_and_action_entities(hass: HomeAssis
     assert subentry.data == {
         CONF_USER_ID: user.id,
         CONF_LINK_NAME: "Demo unit",
+        CONF_LINK_ALIASES: ["Lab station", "Test console"],
         CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
         CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
         CONF_LINK_PRIVATE: False,
     }
+
+
+async def test_linked_device_alias_cannot_duplicate_another_link_name(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    first = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ENTITY_LINK), context={"source": "user"}
+    )
+    await hass.config_entries.subentries.async_configure(
+        first["flow_id"],
+        {
+            CONF_USER_ID: user.id,
+            CONF_LINK_NAME: "Demo unit",
+            CONF_LINK_ALIASES: "Lab station",
+            CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
+            CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
+        },
+    )
+    second = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ENTITY_LINK), context={"source": "user"}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        second["flow_id"],
+        {
+            CONF_USER_ID: user.id,
+            CONF_LINK_NAME: "Another device",
+            CONF_LINK_ALIASES: "lab station",
+            CONF_LINK_STATE_ENTITY: "binary_sensor.other_status",
+            CONF_LINK_ACTION_ENTITY: "button.other_action",
+        },
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_LINK_NAME: "duplicate_link_name"}
+
+
+async def test_reconfigure_linked_device_aliases(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    created = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ENTITY_LINK), context={"source": "user"}
+    )
+    await hass.config_entries.subentries.async_configure(
+        created["flow_id"],
+        {
+            CONF_USER_ID: user.id,
+            CONF_LINK_NAME: "Demo unit",
+            CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
+            CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
+        },
+    )
+    subentry = next(
+        sub for sub in entry.subentries.values()
+        if sub.subentry_type == SUBENTRY_ENTITY_LINK
+    )
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ENTITY_LINK),
+        context={"source": "reconfigure", "subentry_id": subentry.subentry_id},
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"],
+        {
+            CONF_USER_ID: user.id,
+            CONF_LINK_NAME: "Demo unit",
+            CONF_LINK_ALIASES: "Lab station\nTest console",
+            CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
+            CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert subentry.data[CONF_LINK_ALIASES] == ["Lab station", "Test console"]
 
 
 async def test_add_person_with_entity_aliases(hass: HomeAssistant) -> None:
@@ -480,6 +555,26 @@ async def test_prompt_preview_descriptions_use_shaded_wrapping_boxes() -> None:
         '<ha-alert alert-type="info">first line<br><br>## ENTITY MAPPINGS<br>'
         "&lt;second &amp; line&gt;</ha-alert>"
     )
+
+
+async def test_linked_device_translations_cover_add_and_reconfigure() -> None:
+    translation_path = (
+        Path(__file__).parent.parent
+        / "custom_components/speaker_recognition_tools/translations/en.json"
+    )
+    linked_device = json.loads(translation_path.read_text())["config_subentries"][
+        "entity_link"
+    ]
+    expected_fields = {
+        "user_id": "Person",
+        "link_name": "Spoken name",
+        "link_aliases": "Aliases",
+        "state_entity": "Entity for status information",
+        "action_entity": "Entity for actions",
+        "private": "Private to this person",
+    }
+    assert linked_device["step"]["user"]["data"] == expected_fields
+    assert linked_device["step"]["reconfigure"]["data"] == expected_fields
 
 
 async def test_preview_shows_unknown_speaker_prompt(hass: HomeAssistant) -> None:

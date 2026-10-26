@@ -226,10 +226,11 @@ def test_linked_device_shows_shared_name_for_status_and_action(prompt):
         "u1",
         "James",
         "Dad",
-        entity_links=(("Demo unit", "binary_sensor.demo_unit_status", "button.demo_unit_action", False),),
+        entity_links=(("Demo unit", "binary_sensor.demo_unit_status", "button.demo_unit_action", False, ("Lab station", "Test console")),),
     )
     text = person(prompt, user_id="u1", user_name="James", people=[james])
-    assert "Linked devices:\n - Demo unit: status binary_sensor.demo_unit_status; actions button.demo_unit_action" in text
+    assert "Linked devices:\n - Demo unit (also called Lab station, Test console): status binary_sensor.demo_unit_status; actions button.demo_unit_action" in text
+    assert "alternate names refer to the same device and work for both status and action requests" in text
     assert "the same spoken name resolves to its status entity" in text
 
 
@@ -238,7 +239,7 @@ def test_private_linked_device_is_hidden_from_other_people(prompt):
         "u1",
         "James",
         "Dad",
-        entity_links=(("Demo unit", "binary_sensor.demo_unit_status", "button.demo_unit_action", True),),
+        entity_links=(("Demo unit", "binary_sensor.demo_unit_status", "button.demo_unit_action", True, ("Lab station", "Test console")),),
     )
     sarah = prompt.Person("u2", "Sarah", "Mum")
     text = person(prompt, user_id="u2", user_name="Sarah", people=[james, sarah])
