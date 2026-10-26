@@ -12,6 +12,7 @@ from .const import (
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_TITLE,
+    CONF_THIRD_PERSON_REFERENCE,
     CONF_USER_ID,
     SUBENTRY_SPEAKER,
     CONF_UNKNOWN_TITLE,
@@ -74,6 +75,7 @@ class SpeakingPersonAPI(llm.API):
                     title,
                     tuple(entities),
                     frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
+                    sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
                 )
             )
 

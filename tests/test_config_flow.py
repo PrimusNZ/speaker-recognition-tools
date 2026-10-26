@@ -20,6 +20,7 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_TITLE,
+    CONF_THIRD_PERSON_REFERENCE,
     CONF_TOOL_TYPE,
     CONF_UNKNOWN_TITLE,
     CONF_USER_ID,
@@ -209,7 +210,7 @@ async def _user(hass: HomeAssistant, name: str):
     return await hass.auth.async_create_user(name, group_ids=["system-users"])
 
 
-async def _add_person(hass, entry, user_id, title=None, entities=None, private=None):
+async def _add_person(hass, entry, user_id, title=None, entities=None, private=None, third_person_reference=None):
     result = await hass.config_entries.subentries.async_init(
         (entry.entry_id, SUBENTRY_SPEAKER), context={"source": "user"}
     )
@@ -219,7 +220,8 @@ async def _add_person(hass, entry, user_id, title=None, entities=None, private=N
         {CONF_USER_ID: user_id}
         | ({CONF_TITLE: title} if title is not None else {})
         | ({CONF_ENTITIES: entities} if entities else {})
-        | ({CONF_PRIVATE_ENTITIES: private} if private else {}),
+        | ({CONF_PRIVATE_ENTITIES: private} if private else {})
+        | ({CONF_THIRD_PERSON_REFERENCE: third_person_reference} if third_person_reference else {}),
     )
     if result.get("errors", {}).get("base") == "entity_warnings_acknowledge":
         result = await hass.config_entries.subentries.async_configure(
@@ -227,7 +229,8 @@ async def _add_person(hass, entry, user_id, title=None, entities=None, private=N
             {CONF_USER_ID: user_id}
             | ({CONF_TITLE: title} if title is not None else {})
             | ({CONF_ENTITIES: entities} if entities else {})
-            | ({CONF_PRIVATE_ENTITIES: private} if private else {}),
+            | ({CONF_PRIVATE_ENTITIES: private} if private else {})
+            | ({CONF_THIRD_PERSON_REFERENCE: third_person_reference} if third_person_reference else {}),
         )
     return result
 
@@ -245,6 +248,15 @@ async def test_add_person(hass: HomeAssistant) -> None:
         CONF_ENTITIES: [],
         CONF_PRIVATE_ENTITIES: [],
     }
+
+
+async def test_add_person_with_third_person_reference(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    result = await _add_person(hass, entry, user.id, "Dad", third_person_reference="The father")
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    sub = next(iter(entry.subentries.values()))
+    assert sub.data[CONF_THIRD_PERSON_REFERENCE] == "The father"
 
 
 async def test_add_person_duplicate_user_rejected(hass: HomeAssistant) -> None:
@@ -460,6 +472,19 @@ async def test_reconfigure_person_changes_title_and_entities(
         CONF_PRIVATE_ENTITIES: [],
     }
     assert sub.title == "James: Father (2 entities)"
+
+
+async def test_reconfigure_person_third_person_reference(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    sub_id = next(iter(entry.subentries))
+    await _reconfigure(hass, entry, sub_id, {
+        CONF_TITLE: "Dad",
+        CONF_THIRD_PERSON_REFERENCE: "The father",
+        CONF_ENTITIES: [],
+    })
+    assert entry.subentries[sub_id].data[CONF_THIRD_PERSON_REFERENCE] == "The father"
 
 
 async def test_reconfigure_can_clear_entities(hass: HomeAssistant) -> None:

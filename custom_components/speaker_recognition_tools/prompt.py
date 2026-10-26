@@ -20,6 +20,12 @@ class Person(NamedTuple):
     title: str
     entities: tuple[tuple[str, str], ...] = ()  # (entity_id, label)
     private: frozenset[str] = frozenset()  # entity ids only this person may use
+    third_person_reference: str | None = None
+
+    @property
+    def reference_title(self) -> str:
+        """How to refer to this person when speaking about them."""
+        return self.third_person_reference or self.title
 
 
 _GROUPS = (
@@ -42,6 +48,8 @@ def _line(entity_id: str, label: str, private: bool = False) -> str:
 def _person_block(person: Person, current: bool) -> str:
     heading = _label(person.name, person.title)
     title = f"### {heading}{' [current speaker]' if current else ''}"
+    if person.reference_title != person.title:
+        title += f"\nThird-person reference: {person.reference_title}"
     # Other people's private entities are never shown.
     visible = [e for e in person.entities if current or e[0] not in person.private]
     if not visible:
@@ -73,11 +81,14 @@ def _titles_text(people: list[Person]) -> str:
         return ""
     lines = "\n".join(
         f" - {_label(p.name, p.title)}"
+        + (f" (third-person: {p.reference_title})" if p.reference_title != p.title else "")
         for p in _alphabetical(people)
     )
     return (
         "\n\n## PEOPLE\n\nBelow is a list of the people in this home and their "
-        "titles. Refer to people by title, not by name, unless asked. A name "
+        "titles and third-person references. Address people by title; when "
+        "referring to them in third person, use their listed third-person "
+        "reference. A name "
         f"and a title mean the same person.\n\n{lines}"
     )
 
@@ -92,7 +103,9 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
     intro = (
         "Below is a list of people and the entities that relate to them. "
         "Refer to people by title, not by name, unless asked. A name and a "
-        "title mean the same person."
+        "title mean the same person. Address a person by their title; when "
+        "referring to someone in third person, use their configured third-person "
+        "reference when one is listed, otherwise use their title."
     )
     intro += f' "my", "me" or "I" means {me.title}, the current speaker.'
     if any(p.entities for p in people):
@@ -142,8 +155,11 @@ def _build_person_text(
         return (
             "Voice recognition identifies the speaker as "
             f"{user_name or 'a recognised person'}. Address them as {title}. "
-            f"Apart from the answer below, they are only to be referred to by "
-            f"their title, {title}. "
+            f"Apart from the answer below, address them as {title}. When "
+            f"referring to them in third person, "
+            f"use {next((p.reference_title for p in people if p.user_id == user_id), title)}. "
+            "When a tool reports on a person, use the third-person reference in "
+            "the tool result, including when it reports on the current speaker. "
             f'If they ask who they are, answer "You are {title}{who}."\n\n'
             f"{_title_rule(title)} Recognition is reliable but not infallible. "
             "Do not discuss the recognition process unless asked."

@@ -36,6 +36,25 @@ def test_known_speaker_without_user_name(prompt):
     assert 'answer "You are Mum."' in text
 
 
+def test_third_person_reference_is_separate_from_direct_title(prompt):
+    people = [
+        prompt.Person("u1", "James", "Dad", third_person_reference="The father"),
+        prompt.Person("u2", "Alex", "Mum", third_person_reference="The mother"),
+    ]
+    text = person(
+        prompt,
+        user_id="u2",
+        user_name="Alex",
+        speakers={"u1": "Dad", "u2": "Mum"},
+        people=people,
+    )
+    assert "Address them as Mum." in text
+    assert "When referring to them in third person, use The mother." in text
+    assert "including when it reports on the current speaker" in text
+    assert "Third-person reference: The father" in text
+    assert "referring to someone in third person, use their configured third-person reference" in text
+
+
 def test_known_speaker_ignores_deny_unknown(prompt):
     text = person(prompt, user_id="u1", user_name="James", deny_unknown=True)
     assert "LOCKDOWN" not in text

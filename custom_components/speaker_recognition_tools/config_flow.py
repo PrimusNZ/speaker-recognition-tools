@@ -30,6 +30,7 @@ from .const import (
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_TITLE,
+    CONF_THIRD_PERSON_REFERENCE,
     CONF_TOOL_TYPE,
     CONF_UNKNOWN_TITLE,
     CONF_USER_ID,
@@ -348,6 +349,7 @@ async def _configured_people(hass, entry) -> list[Person]:
         people.append(Person(
             sub.data[CONF_USER_ID], name, title, entities,
             frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
+            sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
         ))
     return people
 
@@ -423,6 +425,8 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                             CONF_TITLE: title,
                             CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
                             CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
+                            **({CONF_THIRD_PERSON_REFERENCE: user_input[CONF_THIRD_PERSON_REFERENCE].strip()}
+                               if user_input.get(CONF_THIRD_PERSON_REFERENCE, "").strip() else {}),
                         },
                         unique_id=user_input[CONF_USER_ID],
                     )
@@ -432,6 +436,7 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                     selector.SelectSelectorConfig(options=await self._user_options())
                 ),
                 vol.Optional(CONF_TITLE): selector.TextSelector(),
+                vol.Optional(CONF_THIRD_PERSON_REFERENCE): selector.TextSelector(),
                 vol.Optional(CONF_ENTITIES): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
                 ),
@@ -479,6 +484,8 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                         CONF_TITLE: title,
                         CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
                         CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
+                        **({CONF_THIRD_PERSON_REFERENCE: user_input[CONF_THIRD_PERSON_REFERENCE].strip()}
+                           if user_input.get(CONF_THIRD_PERSON_REFERENCE, "").strip() else {}),
                     },
                 )
         schema = vol.Schema(
@@ -486,6 +493,10 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 vol.Optional(
                     CONF_TITLE,
                     description={"suggested_value": subentry.data.get(CONF_TITLE, "")},
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_THIRD_PERSON_REFERENCE,
+                    description={"suggested_value": subentry.data.get(CONF_THIRD_PERSON_REFERENCE, "")},
                 ): selector.TextSelector(),
                 vol.Optional(
                     CONF_ENTITIES,

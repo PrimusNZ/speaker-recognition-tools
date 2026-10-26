@@ -46,7 +46,7 @@ _MAX_HISTORY_RANGE = datetime.timedelta(days=31)
 
 def _no_address_note(speaker: Person, target: Person) -> str:
     """The reply the agent must give when someone is away and no address is known."""
-    who = "you" if target.user_id == speaker.user_id else target.title
+    who = "you" if target.user_id == speaker.user_id else target.reference_title
     return (
         f'Reply with exactly: "Sorry {speaker.title}, An exact address for {who} '
         'is unknown." Add nothing else and do not guess where they are.'
@@ -83,6 +83,10 @@ class Household:
         self.people = people
         self.speaker = speaker
 
+    def reference(self, person: Person) -> str:
+        """Use the third-person form in tool results, even for the speaker."""
+        return person.reference_title
+
     def find(
         self, names: list[str] | None
     ) -> tuple[list[Person], list[dict[str, Any]]]:
@@ -97,7 +101,7 @@ class Household:
                 matches = [
                     p
                     for p in self.people
-                    if key in (p.title.casefold(), (p.name or "").casefold())
+                    if key in (p.title.casefold(), p.reference_title.casefold(), (p.name or "").casefold())
                 ]
             if len(matches) == 1:
                 if matches[0] not in found:
@@ -107,7 +111,7 @@ class Household:
                     {
                         "problem": "ambiguous_person" if matches else "unknown_person",
                         "name": raw,
-                        "known_people": [p.title for p in self.people],
+                        "known_people": [self.reference(p) for p in self.people],
                     }
                 )
         return found, problems
@@ -142,17 +146,17 @@ class Household:
             if not assigned:
                 problems.append(
                     {
-                        "person": person.title,
+                        "person": self.reference(person),
                         "problem": "no_calendar",
-                        "message": f"{person.title} has no calendar assigned.",
+                        "message": f"{self.reference(person)} has no calendar assigned.",
                     }
                 )
             elif not usable:
                 problems.append(
                     {
-                        "person": person.title,
+                        "person": self.reference(person),
                         "problem": "private",
-                        "message": f"{person.title}'s calendar is private.",
+                        "message": f"{self.reference(person)}'s calendar is private.",
                     }
                 )
             else:
@@ -164,10 +168,10 @@ class Household:
                 else:
                     problems.append(
                         {
-                            "person": person.title,
+                            "person": self.reference(person),
                             "problem": "choose_calendar",
                             "message": (
-                                f"{person.title} has more than one calendar. Ask "
+                                f"{self.reference(person)} has more than one calendar. Ask "
                                 "the speaker which one, then call again with the "
                                 "chosen entity_id in calendars."
                             ),
@@ -493,7 +497,7 @@ class GetCalendarEventsTool(_PersonTool):
             except (HomeAssistantError, KeyError, ValueError) as err:
                 problems.append(
                     {
-                        "person": person.title,
+                        "person": self.household.reference(person),
                         "problem": "read_failed",
                         "entity_id": entity_id,
                         "message": str(err),
@@ -502,7 +506,7 @@ class GetCalendarEventsTool(_PersonTool):
                 continue
             results.append(
                 {
-                    "person": person.title,
+                    "person": self.household.reference(person),
                     "calendar": label,
                     "entity_id": entity_id,
                     "events": events,
@@ -560,14 +564,14 @@ class SearchCalendarEventsTool(_PersonTool):
                 events = await _calendar_events(hass, entity_id, start, end)
             except (HomeAssistantError, ValueError) as err:
                 problems.append(
-                    {"person": person.title, "problem": "read_failed", "entity_id": entity_id, "message": str(err)}
+                    {"person": self.household.reference(person), "problem": "read_failed", "entity_id": entity_id, "message": str(err)}
                 )
                 continue
             for event in events:
                 if query in event.summary.casefold():
                     matches.append(
                         {
-                            "person": person.title,
+                            "person": self.household.reference(person),
                             "calendar": label,
                             "entity_id": entity_id,
                             "event": _event_dict(event),
@@ -620,7 +624,7 @@ class CheckCalendarAvailabilityTool(_PersonTool):
                 events = await _calendar_events(hass, entity_id, start, end)
             except (HomeAssistantError, ValueError) as err:
                 problems.append(
-                    {"person": person.title, "problem": "read_failed", "entity_id": entity_id, "message": str(err)}
+                    {"person": self.household.reference(person), "problem": "read_failed", "entity_id": entity_id, "message": str(err)}
                 )
                 continue
             conflicts = [
@@ -630,7 +634,7 @@ class CheckCalendarAvailabilityTool(_PersonTool):
             ]
             calendars.append(
                 {
-                    "person": person.title,
+                    "person": self.household.reference(person),
                     "calendar": label,
                     "entity_id": entity_id,
                     "available": not conflicts,
@@ -725,7 +729,7 @@ class DeleteCalendarEventTool(_PersonTool):
             "recurrence_id": args.get("recurrence_id"),
             "event": _event_dict(matches[0]),
         }
-        preview = {"person": person.title, "calendar": label, "event": _event_dict(matches[0]), "delete_series": not args.get("recurrence_id")}
+        preview = {"person": self.household.reference(person), "calendar": label, "event": _event_dict(matches[0]), "delete_series": not args.get("recurrence_id")}
         if confirmation := _calendar_confirmation(
             hass, args, llm_context, action=self.name, plan=plan, preview=preview
         ):
@@ -734,7 +738,7 @@ class DeleteCalendarEventTool(_PersonTool):
             await entity.async_delete_event(args["uid"], recurrence_id=args.get("recurrence_id"))
         except (HomeAssistantError, ValueError) as err:
             return _result({"error": str(err)}, error=True)
-        return _result({"deleted": True, "person": person.title, "calendar": label, "event": preview["event"]})
+        return _result({"deleted": True, "person": self.household.reference(person), "calendar": label, "event": preview["event"]})
 
 
 class UpdateCalendarEventTool(_PersonTool):
@@ -828,7 +832,7 @@ class UpdateCalendarEventTool(_PersonTool):
             "recurrence_id": args.get("recurrence_id"),
             "before": _event_dict(event), "event": event_data,
         }
-        preview = {"person": person.title, "calendar": label, "before": _event_dict(event), "after": {k: v.isoformat() if isinstance(v, (datetime.date, datetime.datetime)) else v for k, v in event_data.items()}}
+        preview = {"person": self.household.reference(person), "calendar": label, "before": _event_dict(event), "after": {k: v.isoformat() if isinstance(v, (datetime.date, datetime.datetime)) else v for k, v in event_data.items()}}
         if confirmation := _calendar_confirmation(
             hass, args, llm_context, action=self.name, plan=plan, preview=preview
         ):
@@ -926,7 +930,7 @@ class CreateCalendarEventTool(_PersonTool):
         }
         preview = {
             "calendars": [
-                {"person": person.title, "calendar": label, "entity_id": entity_id}
+                {"person": self.household.reference(person), "calendar": label, "entity_id": entity_id}
                 for person, entity_id, label in targets
             ],
             "event": data,
@@ -946,10 +950,10 @@ class CreateCalendarEventTool(_PersonTool):
                     context=llm_context.context,
                     blocking=True,
                 )
-                created.append({"person": person.title, "calendar": label})
+                created.append({"person": self.household.reference(person), "calendar": label})
             except (HomeAssistantError, ValueError) as err:
                 failed.append(
-                    {"person": person.title, "calendar": label, "error": str(err)}
+                    {"person": self.household.reference(person), "calendar": label, "error": str(err)}
                 )
         result: dict[str, Any] = {"created": created}
         if failed:
@@ -984,12 +988,12 @@ class GetPersonLocationTool(_PersonTool):
             assigned, usable = self.household.entities(person, LOCATION_DOMAINS)
             if not assigned:
                 results.append(
-                    {"person": person.title, "location": None, "reason": "no location entity assigned"}
+                    {"person": self.household.reference(person), "location": None, "reason": "no location entity assigned"}
                 )
                 continue
             if not usable:
                 results.append(
-                    {"person": person.title, "location": None, "reason": "private"}
+                    {"person": self.household.reference(person), "location": None, "reason": "private"}
                 )
                 continue
             entities = []
@@ -1006,7 +1010,7 @@ class GetPersonLocationTool(_PersonTool):
             ordered = sorted(entities, key=lambda e: not e["entity_id"].startswith("person."))
             known = next((e for e in ordered if e["state"] != "unavailable"), None)
             entry: dict[str, Any] = {
-                "person": person.title,
+                "person": self.household.reference(person),
                 "location": known["state"] if known else "unavailable",
                 "entities": entities,
             }
@@ -1098,10 +1102,10 @@ class GetPersonLocationHistoryTool(_PersonTool):
         for person in people:
             assigned, usable = self.household.entities(person, LOCATION_DOMAINS)
             if not assigned:
-                results.append({"person": person.title, "history": [], "reason": "no location entity assigned"})
+                results.append({"person": self.household.reference(person), "history": [], "reason": "no location entity assigned"})
                 continue
             if not usable:
-                results.append({"person": person.title, "history": [], "reason": "private"})
+                results.append({"person": self.household.reference(person), "history": [], "reason": "private"})
                 continue
             for entity_id, label in usable:
                 requested[entity_id] = (person, label)
@@ -1115,7 +1119,7 @@ class GetPersonLocationHistoryTool(_PersonTool):
                 return _result({"error": f"Location history is unavailable: {err}"}, error=True)
             now = dt_util.utcnow()
             timelines: dict[str, list[dict[str, Any]]] = {p.user_id: [] for p in people}
-            titles = {p.user_id: p.title for p in people}
+            titles = {p.user_id: self.household.reference(p) for p in people}
             for entity_id, (person, label) in requested.items():
                 states = states_by_entity.get(entity_id, [])
                 prior = None

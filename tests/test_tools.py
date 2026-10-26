@@ -30,6 +30,7 @@ from custom_components.speaker_recognition_tools.const import (
     SUBENTRY_SPEAKER,
     TOOL_TYPE_PERSON,
 )
+from custom_components.speaker_recognition_tools.prompt import Person
 
 PEOPLE = {
     # name: (title, entities, private)
@@ -55,6 +56,18 @@ PEOPLE = {
         ["calendar.tom", "device_tracker.tom_phone"],
     ),
 }
+
+
+def test_household_uses_third_person_reference_for_other_people():
+    speaker = Person("u1", "Sarah", "Mum", third_person_reference="The mother")
+    target = Person("u2", "James", "Dad", third_person_reference="The father")
+    household = tools_module.Household([speaker, target], speaker)
+    found, problems = household.find(["The father"])
+    assert not problems
+    assert found == [target]
+    assert household.reference(speaker) == "The mother"
+    assert household.reference(target) == "The father"
+    assert "An exact address for The father is unknown." in tools_module._no_address_note(speaker, target)
 
 
 class Calendars:

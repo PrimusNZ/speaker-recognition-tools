@@ -14,6 +14,7 @@ SUBENTRY_SPEAKER = "speaker"  # one subentry per person: data {user_id, title, e
 SUBENTRY_PREVIEW = "full_prompt_preview"  # transient integration-level prompt preview flow
 CONF_USER_ID = "user_id"
 CONF_TITLE = "title"
+CONF_THIRD_PERSON_REFERENCE = "third_person_reference"
 CONF_ENTITIES = "entities"  # optional list of entity ids
 CONF_PRIVATE_ENTITIES = "private_entities"  # subset of entities only the owner may use
 CONF_UNKNOWN_TITLE = "unknown_title"

@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-26
+
+### Added
+- Added an optional per-person third-person reference, separate from the title used for direct address.
+
 ## [0.1.1.3] - 2026-10-26
 
 ### Fixed
