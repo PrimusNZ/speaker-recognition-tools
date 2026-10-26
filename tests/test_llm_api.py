@@ -9,6 +9,10 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
     CONF_REFUSAL_LINES,
+    CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_NAME,
+    CONF_LINK_PRIVATE,
+    CONF_LINK_STATE_ENTITY,
     CONF_ADDRESS_AS,
     CONF_LEGACY_ADDRESS_AS,
     CONF_LEGACY_UNKNOWN_ADDRESS_AS,
@@ -22,12 +26,13 @@ from custom_components.speaker_recognition_tools.const import (
     PERSON_API_NAME,
     TOOL_TYPE_DEVICE,
     SUBENTRY_SPEAKER,
+    SUBENTRY_ENTITY_LINK,
     TOOL_TYPE_PERSON,
 )
 from homeassistant.config_entries import ConfigSubentryData
 
 
-async def _setup(hass: HomeAssistant, deny: bool = False):
+async def _setup(hass: HomeAssistant, deny: bool = False, linked: bool = False):
     james = await hass.auth.async_create_user("James", group_ids=["system-users"])
     sarah = await hass.auth.async_create_user("Sarah", group_ids=["system-users"])
     hass.states.async_set("calendar.james", "off", {"friendly_name": "James Calendar"})
@@ -61,7 +66,23 @@ async def _setup(hass: HomeAssistant, deny: bool = False):
                     CONF_ENTITIES: ["calendar.sarah", "calendar.gone"],
                 },
             ),
-        ],
+        ] + (
+            [
+                ConfigSubentryData(
+                    subentry_type=SUBENTRY_ENTITY_LINK,
+                    title="Demo unit (James)",
+                    data={
+                        CONF_USER_ID: james.id,
+                        CONF_LINK_NAME: "Demo unit",
+                        CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
+                        CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
+                        CONF_LINK_PRIVATE: False,
+                    },
+                )
+            ]
+            if linked
+            else []
+        ),
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -100,6 +121,12 @@ async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> No
         " - calendar.sarah: Sarah Calendar\n"
         " - calendar.gone"
     ) in text
+
+
+async def test_linked_device_is_injected_with_shared_status_and_action_name(hass: HomeAssistant) -> None:
+    james = await _setup(hass, linked=True)
+    text = await _prompt(hass, james.id)
+    assert "Linked devices:\n - Demo unit: status binary_sensor.demo_unit_status; actions button.demo_unit_action" in text
 
 
 async def test_pre_address_as_settings_remain_supported(hass: HomeAssistant) -> None:

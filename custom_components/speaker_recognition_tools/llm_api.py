@@ -11,6 +11,10 @@ from .const import (
     CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
+    CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_NAME,
+    CONF_LINK_PRIVATE,
+    CONF_LINK_STATE_ENTITY,
     CONF_REFUSAL_LINES,
     CONF_ADDRESS_AS,
     CONF_LEGACY_ADDRESS_AS,
@@ -18,6 +22,7 @@ from .const import (
     CONF_THIRD_PERSON_REFERENCE,
     CONF_USER_ID,
     SUBENTRY_SPEAKER,
+    SUBENTRY_ENTITY_LINK,
     CONF_UNKNOWN_ADDRESS_AS,
     DEFAULT_REFUSAL_LINES,
     DEFAULT_UNKNOWN_ADDRESS_AS,
@@ -54,6 +59,19 @@ class SpeakingPersonAPI(llm.API):
             user_name = _first_name(user.name)
 
         people = []
+        links_by_user: dict[str, list[tuple[str, str, str, bool]]] = {}
+        for sub in self._entry.subentries.values():
+            if sub.subentry_type != SUBENTRY_ENTITY_LINK:
+                continue
+            data = sub.data
+            links_by_user.setdefault(data[CONF_USER_ID], []).append(
+                (
+                    data[CONF_LINK_NAME],
+                    data[CONF_LINK_STATE_ENTITY],
+                    data[CONF_LINK_ACTION_ENTITY],
+                    data.get(CONF_LINK_PRIVATE, False),
+                )
+            )
         for sub in self._entry.subentries.values():
             if sub.subentry_type != SUBENTRY_SPEAKER:
                 continue
@@ -79,6 +97,7 @@ class SpeakingPersonAPI(llm.API):
                     frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
                     sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
                     entity_aliases,
+                    tuple(links_by_user.get(sub.data[CONF_USER_ID], [])),
                 )
             )
 

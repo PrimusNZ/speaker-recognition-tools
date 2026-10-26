@@ -29,6 +29,10 @@ from .const import (
     CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
+    CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_NAME,
+    CONF_LINK_PRIVATE,
+    CONF_LINK_STATE_ENTITY,
     CONF_REFUSAL_LINES,
     CONF_ADDRESS_AS,
     CONF_LEGACY_ADDRESS_AS,
@@ -41,6 +45,7 @@ from .const import (
     DEFAULT_UNKNOWN_ADDRESS_AS,
     DOMAIN,
     SUBENTRY_PREVIEW,
+    SUBENTRY_ENTITY_LINK,
     SUBENTRY_SPEAKER,
     TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
@@ -116,6 +121,7 @@ class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
         if config_entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_PERSON:
             return {
                 SUBENTRY_SPEAKER: SpeakerSubentryFlow,
+                SUBENTRY_ENTITY_LINK: EntityLinkSubentryFlow,
                 SUBENTRY_PREVIEW: FullPromptPreviewSubentryFlow,
             }
         return {}
@@ -347,6 +353,18 @@ def _device_area_id(hass, device) -> str | None:
 async def _configured_people(hass, entry) -> list[Person]:
     """Build the same per-person data used by the live prompt for preview."""
     people = []
+    links_by_user: dict[str, list[tuple[str, str, str, bool]]] = {}
+    for sub in entry.subentries.values():
+        if sub.subentry_type == SUBENTRY_ENTITY_LINK:
+            data = sub.data
+            links_by_user.setdefault(data[CONF_USER_ID], []).append(
+                (
+                    data[CONF_LINK_NAME],
+                    data[CONF_LINK_STATE_ENTITY],
+                    data[CONF_LINK_ACTION_ENTITY],
+                    data.get(CONF_LINK_PRIVATE, False),
+                )
+            )
     for sub in entry.subentries.values():
         if sub.subentry_type != SUBENTRY_SPEAKER:
             continue
@@ -369,6 +387,7 @@ async def _configured_people(hass, entry) -> list[Person]:
             frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
             sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
             entity_aliases,
+            tuple(links_by_user.get(sub.data[CONF_USER_ID], [])),
         ))
     return people
 
@@ -602,6 +621,140 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
             step_id="reconfigure", data_schema=schema, errors=errors,
             description_placeholders={"entity_warnings": issues},
         )
+
+
+class EntityLinkSubentryFlow(ConfigSubentryFlow):
+    """Link one spoken device name to separate status and action entities."""
+
+    async def _person_options(self) -> list[selector.SelectOptionDict]:
+        options = []
+        for sub in self._get_entry().subentries.values():
+            if sub.subentry_type != SUBENTRY_SPEAKER:
+                continue
+            user = await self.hass.auth.async_get_user(sub.data[CONF_USER_ID])
+            if user and user.is_active:
+                options.append(
+                    selector.SelectOptionDict(
+                        value=user.id,
+                        label=(
+                            f"{user.name} ({sub.data.get(CONF_ADDRESS_AS, '')})"
+                            if sub.data.get(CONF_ADDRESS_AS)
+                            else user.name
+                        ),
+                    )
+                )
+        return options
+
+    async def _entry_title(self, name: str, user_id: str) -> str:
+        """Include the owner's first name in the link row shown in Home Assistant."""
+        user = await self.hass.auth.async_get_user(user_id)
+        parts = (user.name if user else user_id).split()
+        owner = parts[0] if parts else "Person"
+        return f"{name} ({owner})"
+
+    def _link_name_in_use(self, user_id: str, name: str, exclude: str | None = None) -> bool:
+        return any(
+            sub.subentry_type == SUBENTRY_ENTITY_LINK
+            and sub.subentry_id != exclude
+            and sub.data.get(CONF_USER_ID) == user_id
+            and sub.data.get(CONF_LINK_NAME, "").strip().casefold() == name.strip().casefold()
+            for sub in self._get_entry().subentries.values()
+        )
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        entry = self._get_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            name = user_input.get(CONF_LINK_NAME, "").strip()
+            state_entity = user_input.get(CONF_LINK_STATE_ENTITY)
+            action_entity = user_input.get(CONF_LINK_ACTION_ENTITY)
+            if not name:
+                errors[CONF_LINK_NAME] = "link_name_required"
+            elif self._link_name_in_use(user_input[CONF_USER_ID], name):
+                errors[CONF_LINK_NAME] = "duplicate_link_name"
+            elif state_entity == action_entity:
+                errors[CONF_LINK_ACTION_ENTITY] = "link_entities_must_differ"
+            else:
+                return self.async_create_entry(
+                    title=await self._entry_title(name, user_input[CONF_USER_ID]),
+                    data={
+                        CONF_USER_ID: user_input[CONF_USER_ID],
+                        CONF_LINK_NAME: name,
+                        CONF_LINK_STATE_ENTITY: state_entity,
+                        CONF_LINK_ACTION_ENTITY: action_entity,
+                        CONF_LINK_PRIVATE: user_input.get(CONF_LINK_PRIVATE, False),
+                    },
+                )
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_USER_ID): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=await self._person_options())
+                ),
+                vol.Required(CONF_LINK_NAME): selector.TextSelector(),
+                vol.Required(CONF_LINK_STATE_ENTITY): selector.EntitySelector(),
+                vol.Required(CONF_LINK_ACTION_ENTITY): selector.EntitySelector(),
+                vol.Optional(CONF_LINK_PRIVATE, default=False): selector.BooleanSelector(),
+            }
+        )
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        entry = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
+        data = subentry.data
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            name = user_input.get(CONF_LINK_NAME, "").strip()
+            state_entity = user_input.get(CONF_LINK_STATE_ENTITY)
+            action_entity = user_input.get(CONF_LINK_ACTION_ENTITY)
+            if not name:
+                errors[CONF_LINK_NAME] = "link_name_required"
+            elif self._link_name_in_use(
+                user_input[CONF_USER_ID], name, exclude=subentry.subentry_id
+            ):
+                errors[CONF_LINK_NAME] = "duplicate_link_name"
+            elif state_entity == action_entity:
+                errors[CONF_LINK_ACTION_ENTITY] = "link_entities_must_differ"
+            else:
+                return self.async_update_and_abort(
+                    entry,
+                    subentry,
+                    title=await self._entry_title(name, user_input[CONF_USER_ID]),
+                    data={
+                        CONF_USER_ID: user_input[CONF_USER_ID],
+                        CONF_LINK_NAME: name,
+                        CONF_LINK_STATE_ENTITY: state_entity,
+                        CONF_LINK_ACTION_ENTITY: action_entity,
+                        CONF_LINK_PRIVATE: user_input.get(CONF_LINK_PRIVATE, False),
+                    },
+                )
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_USER_ID,
+                    default=data[CONF_USER_ID],
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=await self._person_options())
+                ),
+                vol.Required(
+                    CONF_LINK_NAME,
+                    default=data[CONF_LINK_NAME],
+                ): selector.TextSelector(),
+                vol.Required(
+                    CONF_LINK_STATE_ENTITY,
+                    default=data[CONF_LINK_STATE_ENTITY],
+                ): selector.EntitySelector(),
+                vol.Required(
+                    CONF_LINK_ACTION_ENTITY,
+                    default=data[CONF_LINK_ACTION_ENTITY],
+                ): selector.EntitySelector(),
+                vol.Optional(
+                    CONF_LINK_PRIVATE,
+                    default=data.get(CONF_LINK_PRIVATE, False),
+                ): selector.BooleanSelector(),
+            }
+        )
+        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
 
 
 class FullPromptPreviewSubentryFlow(ConfigSubentryFlow):

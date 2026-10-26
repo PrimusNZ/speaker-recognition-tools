@@ -221,6 +221,30 @@ def test_entity_aliases_are_shown_with_their_assigned_entity(prompt):
     assert "pass its exact entity_id or a configured alias" in text
 
 
+def test_linked_device_shows_shared_name_for_status_and_action(prompt):
+    james = prompt.Person(
+        "u1",
+        "James",
+        "Dad",
+        entity_links=(("Demo unit", "binary_sensor.demo_unit_status", "button.demo_unit_action", False),),
+    )
+    text = person(prompt, user_id="u1", user_name="James", people=[james])
+    assert "Linked devices:\n - Demo unit: status binary_sensor.demo_unit_status; actions button.demo_unit_action" in text
+    assert "the same spoken name resolves to its status entity" in text
+
+
+def test_private_linked_device_is_hidden_from_other_people(prompt):
+    james = prompt.Person(
+        "u1",
+        "James",
+        "Dad",
+        entity_links=(("Demo unit", "binary_sensor.demo_unit_status", "button.demo_unit_action", True),),
+    )
+    sarah = prompt.Person("u2", "Sarah", "Mum")
+    text = person(prompt, user_id="u2", user_name="Sarah", people=[james, sarah])
+    assert "Demo unit" not in text
+
+
 def test_private_entity_aliases_are_hidden_from_other_people(prompt):
     james = prompt.Person("u1", "James", "Dad")
     sarah = prompt.Person(

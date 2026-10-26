@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Add tools to read assigned entity states and call Home Assistant services on assigned entities, with per-person privacy checks.
 
+## [0.6.0.1] - 2026-10-26
+
+### Added
+- Add linked devices that map one spoken name to separate status and action entities.
+
 ## [Unreleased]
 
 ## [0.5.0.2] - 2026-10-26

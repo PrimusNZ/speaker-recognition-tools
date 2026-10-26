@@ -569,6 +569,36 @@ class _PersonTool(llm.Tool):
             }
         return matched[0], None
 
+    def _entity_for_operation(self, person: Person, requested: str, operation: str):
+        """Resolve a linked device by its shared name and route by operation."""
+        key = requested.strip().casefold()
+        links = [
+            link
+            for link in person.entity_links
+            if key in {link[0].casefold(), link[1].casefold(), link[2].casefold()}
+        ]
+        if links:
+            if len(links) > 1:
+                return None, {
+                    "problem": "choose_entity",
+                    "message": "More than one linked device matches. Ask which device, then try again.",
+                    "options": [{"name": link[0]} for link in links],
+                }
+            name, state_entity, action_entity, private = links[0]
+            entity_id = state_entity if operation == "read" else action_entity
+            if not entity_id:
+                return None, {
+                    "problem": f"no_{operation}_entity",
+                    "message": f"{name} has no entity configured for {operation} operations.",
+                }
+            if (
+                self.household.speaker.user_id != person.user_id
+                and (private or entity_id in person.private)
+            ):
+                return None, {"problem": "private", "message": "That linked device is private to its owner."}
+            return (entity_id, name, ()), None
+        return self._assigned_entity(person, requested)
+
 
 class GetEntityStateTool(_PersonTool):
     """Read the state and attributes of one entity assigned to a person."""
@@ -583,6 +613,7 @@ class GetEntityStateTool(_PersonTool):
         "or configured third-person reference and defaults to the current speaker. "
         "Only read entities "
         "assigned to that person; private entities can only be read by their owner. "
+        "For a linked device, its shared name resolves to the status entity here. "
         "The result may include its configured Home Assistant area and state attributes. "
         "Use get_person_location for a person's presence, zones and addresses, and "
         "calendar tools for calendar events. Do not infer a room from a home state alone."
@@ -597,7 +628,9 @@ class GetEntityStateTool(_PersonTool):
         person, problems = self._entity_person(args)
         if problems:
             return _result({"problems": problems}, error=True)
-        target, problem = self._assigned_entity(person, str(args.get("entity", "")))
+        target, problem = self._entity_for_operation(
+            person, str(args.get("entity", "")), "read"
+        )
         if problem:
             return _result(problem, error=True)
         entity_id, label, _ = target
@@ -643,10 +676,11 @@ class ControlAssignedEntityTool(_PersonTool):
         "Perform a requested Home Assistant action on one assigned entity. entity "
         "accepts its exact entity_id, configured name, or alias; use the first alias "
         "as its preferred name in your reply. service must be a Home Assistant "
-        "service such as switch.turn_on, light.turn_off, climate.set_temperature, "
+        "service such as button.press, switch.turn_on, light.turn_off, climate.set_temperature, "
         "or homeassistant.turn_on. Supply service-specific fields in service_data. "
-        "Only entities assigned to the selected person may be controlled; optional "
-        "person accepts a first name, configured form of address, or configured "
+        "Only entities assigned to the selected person may be controlled. For a "
+        "linked device, its shared name resolves to the action entity here. The "
+        "optional person parameter accepts a first name, configured form of address, or configured "
         "third-person reference and defaults to the current speaker. Private entities can only be "
         "controlled by their owner. The service is always targeted to that one entity; "
         "never include entity_id, device_id, area_id, floor_id, label_id, or target in "
@@ -671,7 +705,9 @@ class ControlAssignedEntityTool(_PersonTool):
         person, problems = self._entity_person(args)
         if problems:
             return _result({"problems": problems}, error=True)
-        target, problem = self._assigned_entity(person, str(args.get("entity", "")))
+        target, problem = self._entity_for_operation(
+            person, str(args.get("entity", "")), "control"
+        )
         if problem:
             return _result(problem, error=True)
         entity_id, label, _ = target

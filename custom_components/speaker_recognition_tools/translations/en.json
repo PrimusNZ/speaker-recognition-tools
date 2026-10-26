@@ -82,6 +82,55 @@
         "reconfigure_successful": "Person updated."
       }
     },
+    "entity_link": {
+      "entry_type": "Linked device",
+      "initiate_flow": {
+        "user": "Add linked device"
+      },
+      "step": {
+        "user": {
+          "title": "Add linked device",
+          "description": "Give a device one spoken name and select the entity that reports its state and the entity used to control it.",
+          "data": {
+            "user_id": "Person",
+            "link_name": "Spoken name",
+            "state_entity": "Entity for status information",
+            "action_entity": "Entity for actions",
+            "private": "Private to this person"
+          },
+          "data_description": {
+            "link_name": "The agent uses this same name for status questions and action requests.",
+            "state_entity": "For example, a binary sensor or temperature sensor.",
+            "action_entity": "For example, a button or switch entity.",
+            "private": "When enabled, only this person can use either linked entity through this integration."
+          }
+        }
+      },
+      "reconfigure": {
+        "title": "Change linked device",
+        "data": {
+          "user_id": "Person",
+          "link_name": "Spoken name",
+          "state_entity": "Entity for status information",
+          "action_entity": "Entity for actions",
+          "private": "Private to this person"
+        },
+        "data_description": {
+          "link_name": "The agent uses this same name for status questions and action requests.",
+          "state_entity": "For example, a binary sensor or temperature sensor.",
+          "action_entity": "For example, a button or switch entity.",
+          "private": "When enabled, only this person can use either linked entity through this integration."
+        }
+      },
+      "error": {
+        "link_name_required": "Enter a spoken name for this linked device.",
+        "duplicate_link_name": "That person already has a linked device with this name.",
+        "link_entities_must_differ": "Choose different entities for status and actions."
+      },
+      "abort": {
+        "reconfigure_successful": "Linked device updated."
+      }
+    },
     "full_prompt_preview": {
       "entry_type": "Full prompt preview",
       "initiate_flow": {

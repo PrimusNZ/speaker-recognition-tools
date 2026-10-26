@@ -23,6 +23,7 @@ class Person(NamedTuple):
     private: frozenset[str] = frozenset()  # entity ids only this person may use
     third_person_reference: str | None = None
     entity_aliases: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    entity_links: tuple[tuple[str, str, str, bool], ...] = ()  # (name, status id, action id, private)
 
     @property
     def direct_address(self) -> str:
@@ -92,7 +93,9 @@ def _person_block(person: Person, current: bool) -> str:
     # Other people's private entities are never shown.
     visible = [e for e in person.entities if current or e[0] not in person.private]
     if not visible:
-        return f"{block_heading}\n(no entities)"
+        entity_text = "(no entities)"
+        link_text = _linked_devices_text(person, current)
+        return f"{block_heading}\n{entity_text}" + (f"\n\n{link_text}" if link_text else "")
     # A blank line between groups keeps a markdown renderer from folding the next
     # group's heading into the last list item.
     groups = []
@@ -109,7 +112,20 @@ def _person_block(person: Person, current: bool) -> str:
                 for e in members
             )
             groups.append("\n".join(lines))
-    return block_heading + "\n" + "\n\n".join(groups)
+    link_text = _linked_devices_text(person, current)
+    return block_heading + "\n" + "\n\n".join(groups) + (f"\n\n{link_text}" if link_text else "")
+
+
+def _linked_devices_text(person: Person, current: bool) -> str:
+    """Show linked status/action entities under one shared spoken name."""
+    links = [link for link in person.entity_links if current or not link[3]]
+    if not links:
+        return ""
+    lines = ["Linked devices:"]
+    for name, state_entity, action_entity, private in links:
+        suffix = " (private)" if private else ""
+        lines.append(f" - {name}: status {state_entity}; actions {action_entity}{suffix}")
+    return "\n".join(lines)
 
 
 def _label(name: str | None, address_as: str) -> str:
@@ -142,14 +158,14 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
     me = next((p for p in people if p.user_id == user_id), None)
     if me is None:
         return _people_list_text(people)
-    if not any(p is not me for p in people) and not me.entities:
+    if not any(p is not me for p in people) and not me.entities and not me.entity_links:
         return ""
     intro = (
         "Below is a list of people and the entities that relate to them. "
         f"{_ADDRESSING_RULES}"
     )
     intro += f' "my", "me" or "I" means {me.direct_address}, the current speaker.'
-    if any(p.entities for p in people):
+    if any(p.entities or p.entity_links for p in people):
         intro += (
         "The first alias shown for an entity is its preferred name; any other "
         "aliases shown for it are alternate names for that same entity. When a "
@@ -172,8 +188,10 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "before the second tool call; never confirm on their behalf. Use "
             "get_entity_state to read the current state and attributes of an "
             "assigned device or sensor, including its configured area, and "
-            "control_assigned_entity to perform a requested "
-            "Home Assistant service on one assigned entity. Never use the generic "
+            "control_assigned_entity to perform a requested Home Assistant "
+            "service on one assigned entity. For a linked device, the same "
+            "spoken name resolves to its status entity with get_entity_state "
+            "and its action entity with control_assigned_entity. Never use the generic "
             "entity-control tool to change a calendar. Use "
             "get_person_location for current locations and "
             "get_person_location_history for recorded locations and arrivals "

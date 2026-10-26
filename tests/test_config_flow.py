@@ -19,6 +19,10 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
+    CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_NAME,
+    CONF_LINK_PRIVATE,
+    CONF_LINK_STATE_ENTITY,
     CONF_REFUSAL_LINES,
     CONF_ADDRESS_AS,
     CONF_LEGACY_ADDRESS_AS,
@@ -31,6 +35,7 @@ from custom_components.speaker_recognition_tools.const import (
     DEFAULT_UNKNOWN_ADDRESS_AS,
     DOMAIN,
     SUBENTRY_PREVIEW,
+    SUBENTRY_ENTITY_LINK,
     SUBENTRY_SPEAKER,
     TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
@@ -153,6 +158,7 @@ async def test_subentry_types(hass: HomeAssistant) -> None:
     person = await _person_entry(hass)
     types = SpeakerRecognitionToolsFlow.async_get_supported_subentry_types(person)
     assert SUBENTRY_SPEAKER in types
+    assert SUBENTRY_ENTITY_LINK in types
     assert SUBENTRY_PREVIEW in types
     device = MockConfigEntry(domain=DOMAIN, data={CONF_TOOL_TYPE: TOOL_TYPE_DEVICE})
     assert SpeakerRecognitionToolsFlow.async_get_supported_subentry_types(device) == {}
@@ -283,6 +289,40 @@ async def test_add_person_with_entities(hass: HomeAssistant) -> None:
     sub = next(iter(entry.subentries.values()))
     assert sub.data[CONF_ENTITIES] == entities
     assert result["title"] == "James: Dad (2 entities)"
+
+
+async def test_add_linked_device_with_status_and_action_entities(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ENTITY_LINK), context={"source": "user"}
+    )
+    assert flow["type"] is FlowResultType.FORM
+    assert flow["step_id"] == "user"
+    result = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"],
+        {
+            CONF_USER_ID: user.id,
+            CONF_LINK_NAME: "Demo unit",
+            CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
+            CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
+            CONF_LINK_PRIVATE: False,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"].startswith("Demo unit")
+    subentry = next(
+        sub for sub in entry.subentries.values()
+        if sub.subentry_type == SUBENTRY_ENTITY_LINK
+    )
+    assert subentry.data == {
+        CONF_USER_ID: user.id,
+        CONF_LINK_NAME: "Demo unit",
+        CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
+        CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
+        CONF_LINK_PRIVATE: False,
+    }
 
 
 async def test_add_person_with_entity_aliases(hass: HomeAssistant) -> None:
