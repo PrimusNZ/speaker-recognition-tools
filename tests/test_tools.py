@@ -5,28 +5,33 @@ from __future__ import annotations
 import datetime
 
 import pytest
-from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.components.calendar import CalendarEvent
 from homeassistant.components.calendar.const import CalendarEntityFeature
+from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     area_registry as ar,
+)
+from homeassistant.helpers import (
     device_registry as dr,
+)
+from homeassistant.helpers import (
     entity_registry as er,
+)
+from homeassistant.helpers import (
     llm,
 )
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.speaker_recognition_tools.tools import _since_phrase, _spoken_clock
 from custom_components.speaker_recognition_tools import tools as tools_module
 from custom_components.speaker_recognition_tools.const import (
-    CONF_DENY_UNKNOWN,
-    CONF_ENTITY_ALIASES,
-    CONF_ENTITIES,
-    CONF_PRIVATE_ENTITIES,
     CONF_ADDRESS_AS,
+    CONF_DENY_UNKNOWN,
+    CONF_ENTITIES,
+    CONF_ENTITY_ALIASES,
+    CONF_PRIVATE_ENTITIES,
     CONF_TOOL_TYPE,
     CONF_UNKNOWN_ADDRESS_AS,
     CONF_USER_ID,
@@ -36,10 +41,18 @@ from custom_components.speaker_recognition_tools.const import (
     TOOL_TYPE_PERSON,
 )
 from custom_components.speaker_recognition_tools.prompt import Person
+from custom_components.speaker_recognition_tools.tools import (
+    _since_phrase,
+    _spoken_clock,
+)
 
 PEOPLE = {
     # name: (address_as, entities, private)
-    "James": ("Dad", ["calendar.james", "person.james", "device_tracker.james_phone"], []),
+    "James": (
+        "Dad",
+        ["calendar.james", "person.james", "device_tracker.james_phone"],
+        [],
+    ),
     "Sarah": (
         "Mum",
         ["calendar.sarah_home", "calendar.sarah_work", "calendar.sarah_diary"],
@@ -72,7 +85,10 @@ def test_household_uses_third_person_reference_for_other_people():
     assert found == [target]
     assert household.reference(speaker) == "The mother"
     assert household.reference(target) == "The father"
-    assert "An exact address for The father is unknown." in tools_module._no_address_note(speaker, target)
+    assert (
+        "An exact address for The father is unknown."
+        in tools_module._no_address_note(speaker, target)
+    )
 
     untitled = Person("u3", "Tom", "")
     household = tools_module.Household([speaker, untitled], speaker)
@@ -245,10 +261,15 @@ async def test_tool_descriptions_document_person_aliases(hass, users) -> None:
         assert "configured form of address" in description
         assert "configured third-person reference" in description
 
-    assert "Omit people to use the current speaker" in descriptions["get_calendar_events"]
+    assert (
+        "Omit people to use the current speaker" in descriptions["get_calendar_events"]
+    )
     assert "Omit people to get everyone" in descriptions["get_person_location"]
     assert "use that as where they are" in descriptions["get_person_location"]
-    assert "follow address_note exactly and do not guess" in descriptions["get_person_location"]
+    assert (
+        "follow address_note exactly and do not guess"
+        in descriptions["get_person_location"]
+    )
     assert "optional person parameter" in descriptions["update_calendar_event"]
     assert "optional person parameter" in descriptions["delete_calendar_event"]
     assert "current state and attributes" in descriptions["get_entity_state"]
@@ -291,7 +312,9 @@ async def test_get_entity_state_resolves_alias_and_returns_area(hass, users) -> 
     _, household = _assigned_entity_tools(users["James"])
     tool = tools_module.GetEntityStateTool(household)
 
-    result, error = await _call_entity_tool(hass, users["James"], tool, entity="demo unit")
+    result, error = await _call_entity_tool(
+        hass, users["James"], tool, entity="demo unit"
+    )
 
     assert not error
     assert result["entity"] == "Demo unit"
@@ -301,7 +324,9 @@ async def test_get_entity_state_resolves_alias_and_returns_area(hass, users) -> 
     assert result["area"] == "Office"
 
 
-async def test_control_assigned_entity_calls_service_only_for_target(hass, users) -> None:
+async def test_control_assigned_entity_calls_service_only_for_target(
+    hass, users
+) -> None:
     hass.states.async_set("switch.demo_device", "off")
     calls = []
 
@@ -340,7 +365,9 @@ async def test_control_assigned_entity_rejects_unassigned_target(hass, users) ->
     assert result["problem"] == "entity_not_assigned"
 
 
-async def test_control_assigned_entity_rejects_service_target_override(hass, users) -> None:
+async def test_control_assigned_entity_rejects_service_target_override(
+    hass, users
+) -> None:
     _, household = _assigned_entity_tools(users["James"])
     tool = tools_module.ControlAssignedEntityTool(household)
 
@@ -388,19 +415,27 @@ async def test_entity_tools_refuse_another_persons_private_entity(hass, users) -
 
 
 async def test_entity_control_cannot_bypass_calendar_confirmation(hass, users) -> None:
-    person = Person(users["James"].id, "James", "Dad", (("calendar.james", "James Calendar"),))
+    person = Person(
+        users["James"].id, "James", "Dad", (("calendar.james", "James Calendar"),)
+    )
     household = tools_module.Household([person], person)
     tool = tools_module.ControlAssignedEntityTool(household)
 
     result, error = await _call_entity_tool(
-        hass, users["James"], tool, entity="calendar.james", service="calendar.create_event"
+        hass,
+        users["James"],
+        tool,
+        entity="calendar.james",
+        service="calendar.create_event",
     )
 
     assert error
     assert result["problem"] == "use_calendar_tools"
 
 
-async def test_linked_device_routes_same_name_to_status_and_action_entities(hass, users) -> None:
+async def test_linked_device_routes_same_name_to_status_and_action_entities(
+    hass, users
+) -> None:
     hass.states.async_set("binary_sensor.demo_unit_status", "off")
     hass.states.async_set("button.demo_unit_action", "unknown")
     calls = []
@@ -447,7 +482,9 @@ async def test_linked_device_routes_same_name_to_status_and_action_entities(hass
     assert action_result["entity_id"] == "button.demo_unit_action"
 
 
-async def test_private_linked_device_is_only_available_to_its_owner(hass, users) -> None:
+async def test_private_linked_device_is_only_available_to_its_owner(
+    hass, users
+) -> None:
     speaker = Person(users["Sarah"].id, "Sarah", "Mum")
     owner = Person(
         users["James"].id,
@@ -604,7 +641,9 @@ async def test_owner_can_read_their_private_calendar(hass, users, calendars) -> 
     assert _entities(data) == ["calendar.sarah_diary"]
 
 
-async def test_owner_is_asked_to_choose_between_all_their_calendars(hass, users) -> None:
+async def test_owner_is_asked_to_choose_between_all_their_calendars(
+    hass, users
+) -> None:
     data, _ = await call(hass, users["Sarah"], "get_calendar_events", **RANGE)
     options = _problems(data)["choose_calendar"][0]["options"]
     assert [o["entity_id"] for o in options] == [
@@ -699,7 +738,9 @@ async def test_calendar_failure_is_reported(hass, users, calendars) -> None:
     assert _problems(data)["read_failed"][0]["entity_id"] == "calendar.james"
 
 
-async def test_search_and_availability_use_calendar_events(hass, users, monkeypatch) -> None:
+async def test_search_and_availability_use_calendar_events(
+    hass, users, monkeypatch
+) -> None:
     event = CalendarEvent(
         start=dt_util.parse_datetime("2026-10-29T10:00:00+13:00"),
         end=dt_util.parse_datetime("2026-10-29T11:00:00+13:00"),
@@ -744,7 +785,9 @@ async def test_update_and_delete_calendar_events_require_confirmation(
     )
 
     class Entity:
-        supported_features = CalendarEntityFeature.UPDATE_EVENT | CalendarEntityFeature.DELETE_EVENT
+        supported_features = (
+            CalendarEntityFeature.UPDATE_EVENT | CalendarEntityFeature.DELETE_EVENT
+        )
         updates = []
         deletions = []
 
@@ -761,24 +804,41 @@ async def test_update_and_delete_calendar_events_require_confirmation(
         return [event]
 
     monkeypatch.setattr(tools_module, "_calendar_events", events)
-    update_args = {"uid": "event-1", "start": "2026-10-29", "end": "2026-10-30", "summary": "Doctor"}
-    preview, error = await call(hass, users["James"], "update_calendar_event", **update_args)
+    update_args = {
+        "uid": "event-1",
+        "start": "2026-10-29",
+        "end": "2026-10-30",
+        "summary": "Doctor",
+    }
+    preview, error = await call(
+        hass, users["James"], "update_calendar_event", **update_args
+    )
     assert not error and preview["confirmation_required"]
     assert entity.updates == []
     result, error = await call(
-        hass, users["James"], "update_calendar_event", **update_args,
-        confirmation_token=preview["confirmation_token"], confirmed=True,
+        hass,
+        users["James"],
+        "update_calendar_event",
+        **update_args,
+        confirmation_token=preview["confirmation_token"],
+        confirmed=True,
     )
     assert not error and result["updated"] is True
     assert entity.updates[0][1]["summary"] == "Doctor"
 
     delete_args = {"uid": "event-1", "start": "2026-10-29", "end": "2026-10-30"}
-    preview, error = await call(hass, users["James"], "delete_calendar_event", **delete_args)
+    preview, error = await call(
+        hass, users["James"], "delete_calendar_event", **delete_args
+    )
     assert not error and preview["confirmation_required"]
     assert entity.deletions == []
     result, error = await call(
-        hass, users["James"], "delete_calendar_event", **delete_args,
-        confirmation_token=preview["confirmation_token"], confirmed=True,
+        hass,
+        users["James"],
+        "delete_calendar_event",
+        **delete_args,
+        confirmation_token=preview["confirmation_token"],
+        confirmed=True,
     )
     assert not error and result["deleted"] is True
     assert entity.deletions == [("event-1", None)]
@@ -808,14 +868,14 @@ async def test_create_for_self_defaults_to_one_hour(hass, users, calendars) -> N
     assert made["location"] == "Main St"
 
 
-async def test_create_requires_confirmation_before_writing(hass, users, calendars) -> None:
+async def test_create_requires_confirmation_before_writing(
+    hass, users, calendars
+) -> None:
     args = {
         "summary": "Dentist",
         "start": "2026-10-31T15:00:00",
     }
-    preview, error = await call(
-        hass, users["James"], "create_calendar_event", **args
-    )
+    preview, error = await call(hass, users["James"], "create_calendar_event", **args)
     assert not error
     assert preview["confirmation_required"] is True
     assert preview["preview"]["event"]["summary"] == "Dentist"
@@ -852,9 +912,7 @@ async def test_calendar_confirmation_uses_first_alias_as_name(
         subentry,
         data={
             **subentry.data,
-            CONF_ENTITY_ALIASES: {
-                "calendar.sarah_work": ["Personal", "Diary"]
-            },
+            CONF_ENTITY_ALIASES: {"calendar.sarah_work": ["Personal", "Diary"]},
         },
     )
 
@@ -864,9 +922,7 @@ async def test_calendar_confirmation_uses_first_alias_as_name(
         "summary": "Dentist",
         "start": "2026-10-31T15:00:00",
     }
-    preview, error = await call(
-        hass, users["Sarah"], "create_calendar_event", **args
-    )
+    preview, error = await call(hass, users["Sarah"], "create_calendar_event", **args)
     assert not error
     assert preview["preview"]["calendars"] == [
         {"person": "Mum", "calendar": "Personal", "entity_id": "calendar.sarah_work"}
@@ -954,7 +1010,9 @@ async def test_create_on_someone_elses_private_calendar_by_id_is_refused(
     assert calendars.creates == []
 
 
-async def test_owner_can_create_on_their_private_calendar(hass, users, calendars) -> None:
+async def test_owner_can_create_on_their_private_calendar(
+    hass, users, calendars
+) -> None:
     _, error = await confirmed_call(
         hass,
         users["Sarah"],
@@ -969,7 +1027,11 @@ async def test_owner_can_create_on_their_private_calendar(hass, users, calendars
 
 async def test_create_all_day_event(hass, users, calendars) -> None:
     await confirmed_call(
-        hass, users["James"], "create_calendar_event", summary="Holiday", start="2026-10-31"
+        hass,
+        users["James"],
+        "create_calendar_event",
+        summary="Holiday",
+        start="2026-10-31",
     )
     made = calendars.creates[0]
     assert made["start_date"] == "2026-10-31"
@@ -1018,7 +1080,9 @@ async def test_create_reports_partial_failure(hass, users, calendars) -> None:
     assert data["failed"][0]["calendar"] == "calendar.sarah_home"
 
 
-async def test_location_history_returns_recorded_transitions(hass, users, monkeypatch) -> None:
+async def test_location_history_returns_recorded_transitions(
+    hass, users, monkeypatch
+) -> None:
     hass.states.async_set("person.james", "home")
     state = hass.states.get("person.james")
     seen = {}
@@ -1090,7 +1154,11 @@ async def test_location_for_everyone_respects_privacy(hass, users) -> None:
     assert set(by_person) == {"Dad", "Mum", "Aunt", "Cousin", "Grandad"}
     assert by_person["Dad"]["location"] == "home"
     assert by_person["Mum"]["reason"] == "no location entity assigned"
-    assert by_person["Aunt"] == {"person": "Aunt", "location": None, "reason": "private"}
+    assert by_person["Aunt"] == {
+        "person": "Aunt",
+        "location": None,
+        "reason": "private",
+    }
     assert by_person["Grandad"]["reason"] == "private"
     assert "device_tracker.ann_phone" not in str(data)
 
@@ -1102,7 +1170,9 @@ async def test_owner_can_see_their_private_tracker(hass, users) -> None:
 
 
 async def test_location_unknown_person(hass, users) -> None:
-    data, error = await call(hass, users["James"], "get_person_location", people=["Bob"])
+    data, error = await call(
+        hass, users["James"], "get_person_location", people=["Bob"]
+    )
     assert error
     assert _problems(data)["unknown_person"]
 
@@ -1149,8 +1219,12 @@ async def _where(hass, user, who="Dad"):
     return data["people"][0]
 
 
-async def test_outside_zones_uses_the_companion_apps_geocoded_address(hass, users) -> None:
-    _companion_phone(hass, "james", geocoded="42 Example Road\nSampleton\n0000\nTestland")
+async def test_outside_zones_uses_the_companion_apps_geocoded_address(
+    hass, users
+) -> None:
+    _companion_phone(
+        hass, "james", geocoded="42 Example Road\nSampleton\n0000\nTestland"
+    )
     hass.states.async_set(
         "person.james", "not_home", {"source": "device_tracker.james_phone"}
     )
@@ -1163,14 +1237,18 @@ async def test_outside_zones_uses_the_companion_apps_geocoded_address(hass, user
 @pytest.mark.parametrize("zone", ["home", "Work"])
 async def test_no_address_while_inside_a_zone(hass, users, zone) -> None:
     _companion_phone(hass, "james", geocoded="42 Example Road\nSampleton")
-    hass.states.async_set("person.james", zone, {"source": "device_tracker.james_phone"})
+    hass.states.async_set(
+        "person.james", zone, {"source": "device_tracker.james_phone"}
+    )
     result = await _where(hass, users["Sarah"])
     assert result["location"] == zone
     assert "address" not in result and "address_note" not in result
 
 
 async def test_address_from_the_tracker_itself(hass, users) -> None:
-    hass.states.async_set("device_tracker.james_phone", "not_home", {"address": "17 Fixture Lane"})
+    hass.states.async_set(
+        "device_tracker.james_phone", "not_home", {"address": "17 Fixture Lane"}
+    )
     result = await _where(hass, users["Sarah"])
     assert result["address"] == "Fixture Lane"
 
@@ -1187,7 +1265,10 @@ async def test_unusable_geocoded_sensor_gives_no_address(hass, users, state) -> 
     result = await _where(hass, users["Sarah"])
     assert result["location"] == "outside known zones"
     assert "address" not in result
-    assert 'Reply with exactly: "Sorry Mum, An exact address for Dad is unknown."' in result["address_note"]
+    assert (
+        'Reply with exactly: "Sorry Mum, An exact address for Dad is unknown."'
+        in result["address_note"]
+    )
     assert "do not guess where" in result["address_note"]
 
 
@@ -1206,14 +1287,19 @@ async def test_no_address_when_the_device_reports_none(hass, users) -> None:
 async def test_geocoding_is_per_phone(hass, users) -> None:
     """One person's phone has geocoding on and another's has it off."""
     _companion_phone(hass, "james", geocoded="42 Example Road\nSampleton")
-    hass.states.async_set("person.james", "not_home", {"source": "device_tracker.james_phone"})
+    hass.states.async_set(
+        "person.james", "not_home", {"source": "device_tracker.james_phone"}
+    )
     hass.states.async_set("device_tracker.kim_phone", "not_home")
     with_geo = await _where(hass, users["Sarah"], "Dad")
     without = await _where(hass, users["Sarah"], "Cousin")
     assert with_geo["address"] == "Example Road, Sampleton"
     assert "address_note" not in with_geo
     assert "address" not in without
-    assert '"Sorry Mum, An exact address for Cousin is unknown."' in without["address_note"]
+    assert (
+        '"Sorry Mum, An exact address for Cousin is unknown."'
+        in without["address_note"]
+    )
 
 
 async def test_companion_attributes_give_street_and_town(hass, users) -> None:
@@ -1250,14 +1336,20 @@ async def test_street_and_town_from_plain_text(hass, users, text, expected) -> N
 
 async def test_town_only_attribute(hass, users) -> None:
     hass.states.async_set(
-        "device_tracker.james_phone", "not_home", {"Locality": "Sampleton", "address": "x"}
+        "device_tracker.james_phone",
+        "not_home",
+        {"Locality": "Sampleton", "address": "x"},
     )
     assert (await _where(hass, users["Sarah"]))["address"] == "Sampleton"
 
 
 async def test_address_never_includes_number_postcode_or_country(hass, users) -> None:
-    _companion_phone(hass, "james", geocoded="42 Example Road\nSampleton\n0000\nTestland")
-    hass.states.async_set("person.james", "not_home", {"source": "device_tracker.james_phone"})
+    _companion_phone(
+        hass, "james", geocoded="42 Example Road\nSampleton\n0000\nTestland"
+    )
+    hass.states.async_set(
+        "person.james", "not_home", {"source": "device_tracker.james_phone"}
+    )
     text = str(await _where(hass, users["Sarah"]))
     assert "0000" not in text and "Testland" not in text and "42 Example" not in text
 
@@ -1271,7 +1363,10 @@ async def test_asking_about_yourself_says_you(hass, users) -> None:
 async def test_reply_names_the_speaker_and_the_target(hass, users) -> None:
     hass.states.async_set("device_tracker.james_phone", "not_home")
     asked_by_aunt = await _where(hass, users["Ann"], "Dad")
-    assert '"Sorry Aunt, An exact address for Dad is unknown."' in asked_by_aunt["address_note"]
+    assert (
+        '"Sorry Aunt, An exact address for Dad is unknown."'
+        in asked_by_aunt["address_note"]
+    )
 
 
 async def test_disabled_geocoded_sensor_is_treated_as_off(hass, users) -> None:
@@ -1307,14 +1402,18 @@ async def test_address_does_not_leak_through_a_private_tracker(hass, users) -> N
 
 
 def local(day: int, hour: int, minute: int = 0, month: int = 10) -> datetime.datetime:
-    return datetime.datetime(2026, month, day, hour, minute, tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return datetime.datetime(
+        2026, month, day, hour, minute, tzinfo=dt_util.DEFAULT_TIME_ZONE
+    )
 
 
 @pytest.fixture(autouse=True)
 def _auckland_time():
     """Run every test in one known time zone, and put the old one back after."""
     previous = dt_util.DEFAULT_TIME_ZONE
-    dt_util.set_default_time_zone(datetime.timezone(datetime.timedelta(hours=13), "Fixture/+13"))
+    dt_util.set_default_time_zone(
+        datetime.timezone(datetime.timedelta(hours=13), "Fixture/+13")
+    )
     yield
     dt_util.set_default_time_zone(previous)
 
@@ -1378,7 +1477,10 @@ def test_this_evening_and_tonight() -> None:
     assert _since_phrase(local(26, 9, 0), late) == "nine o'clock this morning"
     assert _since_phrase(local(26, 13, 0), late) == "one o'clock this afternoon"
     assert _since_phrase(local(26, 21, 15), local(26, 23, 59)) == "quarter past nine"
-    assert _since_phrase(local(26, 21, 15), local(27, 4, 0)) == "quarter past nine last night"
+    assert (
+        _since_phrase(local(26, 21, 15), local(27, 4, 0))
+        == "quarter past nine last night"
+    )
     assert _since_phrase(local(26, 22, 0), local(27, 4, 0)) == "ten o'clock last night"
 
 
@@ -1395,9 +1497,13 @@ async def test_location_says_how_long_they_have_been_home(hass, users, freezer) 
     assert result["since"] == local(26, 15, 0).isoformat()
 
 
-async def test_location_says_how_long_they_have_been_at_the_reported_address(hass, users, freezer) -> None:
+async def test_location_says_how_long_they_have_been_at_the_reported_address(
+    hass, users, freezer
+) -> None:
     await _set_at(hass, freezer, local(26, 8, 0), "person.james", "not_home")
-    hass.states.async_set("device_tracker.james_phone", "not_home", {"address": "Example Road"})
+    hass.states.async_set(
+        "device_tracker.james_phone", "not_home", {"address": "Example Road"}
+    )
     freezer.move_to(dt_util.as_utc(now()))
     result = await _where(hass, users["Sarah"])
     assert result["since_spoken"] == "Example Road since eight o'clock this morning"
@@ -1417,17 +1523,26 @@ async def test_location_since_just_now(hass, users, freezer) -> None:
     assert result["since_spoken"] == "home, as of just now"
 
 
-async def test_location_since_uses_the_entity_that_gave_the_location(hass, users, freezer) -> None:
+async def test_location_since_uses_the_entity_that_gave_the_location(
+    hass, users, freezer
+) -> None:
     await _set_at(hass, freezer, local(26, 9, 0), "person.james", "not_home")
     await _set_at(
-        hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home", {"address": "Example Road"}
+        hass,
+        freezer,
+        local(26, 15, 0),
+        "device_tracker.james_phone",
+        "not_home",
+        {"address": "Example Road"},
     )
     freezer.move_to(dt_util.as_utc(now()))
     result = await _where(hass, users["Sarah"])
     assert result["since_spoken"] == "Example Road since nine o'clock this morning"
 
 
-async def test_no_since_when_unavailable_private_or_unassigned(hass, users, freezer) -> None:
+async def test_no_since_when_unavailable_private_or_unassigned(
+    hass, users, freezer
+) -> None:
     hass.states.async_set("person.james", "unavailable")
     hass.states.async_set("device_tracker.james_phone", "unknown")
     unavailable = await _where(hass, users["Sarah"])
@@ -1439,8 +1554,12 @@ async def test_no_since_when_unavailable_private_or_unassigned(hass, users, free
     assert "since" not in unassigned
 
 
-async def test_unknown_address_note_is_not_supplemented_with_a_location_guess(hass, users, freezer) -> None:
-    await _set_at(hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home")
+async def test_unknown_address_note_is_not_supplemented_with_a_location_guess(
+    hass, users, freezer
+) -> None:
+    await _set_at(
+        hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home"
+    )
     freezer.move_to(dt_util.as_utc(now()))
     result = await _where(hass, users["Sarah"])
     assert result["location"] == "outside known zones"
@@ -1455,12 +1574,25 @@ async def test_others_private_entities_are_not_in_the_prompt(hass, users) -> Non
     prompt = (await instance(hass, users["James"])).api_prompt
     assert "calendar.sarah_home" in prompt
     assert "calendar.ann_shared" in prompt
-    for hidden in ("calendar.sarah_diary", "calendar.ann |", "calendar.ann\n", "device_tracker.ann_phone", "calendar.tom", "device_tracker.tom_phone"):
+    for hidden in (
+        "calendar.sarah_diary",
+        "calendar.ann |",
+        "calendar.ann\n",
+        "device_tracker.ann_phone",
+        "calendar.tom",
+        "device_tracker.tom_phone",
+    ):
         assert hidden not in prompt
-    assert not [l for l in prompt.splitlines() if l.startswith(" - ") and l.endswith("(private)")]
+    assert not [
+        line
+        for line in prompt.splitlines()
+        if line.startswith(" - ") and line.endswith("(private)")
+    ]
 
 
-async def test_owners_private_entities_are_shown_without_privacy_markers(hass, users) -> None:
+async def test_owners_private_entities_are_shown_without_privacy_markers(
+    hass, users
+) -> None:
     prompt = (await instance(hass, users["Sarah"])).api_prompt
     assert " - calendar.sarah_diary" in prompt
     assert " - calendar.sarah_home\n" in prompt or " - calendar.sarah_home |" in prompt
@@ -1471,7 +1603,9 @@ async def test_owners_private_entities_are_shown_without_privacy_markers(hass, u
 
 async def test_tool_schemas_validate(hass, users) -> None:
     tools = {t.name: t for t in (await instance(hass, users["James"])).tools}
-    tools["get_calendar_events"].parameters({"start": "2026-10-29", "end": "2026-10-30"})
+    tools["get_calendar_events"].parameters(
+        {"start": "2026-10-29", "end": "2026-10-30"}
+    )
     tools["get_person_location"].parameters({})
     with pytest.raises(Exception):
         tools["get_calendar_events"].parameters({"start": "2026-10-29"})

@@ -15,6 +15,8 @@ from typing import Any
 
 from homeassistant.components.calendar.const import (
     DATA_COMPONENT as CALENDAR_DATA,
+)
+from homeassistant.components.calendar.const import (
     CalendarEntityFeature,
 )
 from homeassistant.components.recorder import history as recorder_history
@@ -22,8 +24,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     area_registry as ar,
+)
+from homeassistant.helpers import (
     device_registry as dr,
+)
+from homeassistant.helpers import (
     entity_registry as er,
+)
+from homeassistant.helpers import (
     llm,
 )
 from homeassistant.util import dt as dt_util
@@ -126,7 +134,8 @@ class Household:
                 matches = [
                     p
                     for p in self.people
-                    if key in (
+                    if key
+                    in (
                         p.direct_address.casefold(),
                         p.third_person_form.casefold(),
                         (p.name or "").casefold(),
@@ -397,7 +406,9 @@ def _calendar_confirmation(
     if pending is None or pending["expires"] <= now:
         store.pop(token, None)
         return _result(
-            {"error": "That confirmation is missing or has expired. Preview the change again."},
+            {
+                "error": "That confirmation is missing or has expired. Preview the change again."
+            },
             error=True,
         )
     if pending["user_id"] != user_id or pending["action"] != action:
@@ -407,7 +418,9 @@ def _calendar_confirmation(
         )
     if pending["signature"] != json.dumps(plan, sort_keys=True, default=str):
         return _result(
-            {"error": "The request differs from the preview. Preview it again before confirming."},
+            {
+                "error": "The request differs from the preview. Preview it again before confirming."
+            },
             error=True,
         )
     if not args.get("confirmed"):
@@ -537,12 +550,18 @@ class _PersonTool(llm.Tool):
             }
             if key not in names:
                 continue
-            if person.user_id != self.household.speaker.user_id and entity_id in person.private:
+            if (
+                person.user_id != self.household.speaker.user_id
+                and entity_id in person.private
+            ):
                 private_match = True
                 continue
             matched.append((entity_id, person.entity_label(entity_id, label), aliases))
         if private_match and not matched:
-            return None, {"problem": "private", "message": "That entity is private to its owner."}
+            return None, {
+                "problem": "private",
+                "message": "That entity is private to its owner.",
+            }
         if not matched:
             return None, {
                 "problem": "entity_not_assigned",
@@ -597,11 +616,13 @@ class _PersonTool(llm.Tool):
                     "problem": f"no_{operation}_entity",
                     "message": f"{name} has no entity configured for {operation} operations.",
                 }
-            if (
-                self.household.speaker.user_id != person.user_id
-                and (private or entity_id in person.private)
+            if self.household.speaker.user_id != person.user_id and (
+                private or entity_id in person.private
             ):
-                return None, {"problem": "private", "message": "That linked device is private to its owner."}
+                return None, {
+                    "problem": "private",
+                    "message": "That linked device is private to its owner.",
+                }
             return (entity_id, name, ()), None
         return self._assigned_entity(person, requested)
 
@@ -628,7 +649,10 @@ class GetEntityStateTool(_PersonTool):
     parameters = vol.Schema({vol.Required("entity"): str, vol.Optional("person"): str})
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         args = tool_input.tool_args
         person, problems = self._entity_person(args)
@@ -643,7 +667,11 @@ class GetEntityStateTool(_PersonTool):
         state = hass.states.get(entity_id)
         if state is None:
             return _result(
-                {"entity": label, "entity_id": entity_id, "problem": "entity_unavailable"},
+                {
+                    "entity": label,
+                    "entity_id": entity_id,
+                    "problem": "entity_unavailable",
+                },
                 error=True,
             )
 
@@ -705,7 +733,10 @@ class ControlAssignedEntityTool(_PersonTool):
     )
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         args = tool_input.tool_args
         person, problems = self._entity_person(args)
@@ -763,7 +794,14 @@ class ControlAssignedEntityTool(_PersonTool):
                 },
                 error=True,
             )
-        reserved = {"entity_id", "device_id", "area_id", "floor_id", "label_id", "target"}
+        reserved = {
+            "entity_id",
+            "device_id",
+            "area_id",
+            "floor_id",
+            "label_id",
+            "target",
+        }
         if reserved.intersection(service_data):
             return _result(
                 {
@@ -773,7 +811,9 @@ class ControlAssignedEntityTool(_PersonTool):
                 error=True,
             )
         if not hass.services.has_service(service_domain, service_name):
-            return _result({"problem": "unknown_service", "service": service}, error=True)
+            return _result(
+                {"problem": "unknown_service", "service": service}, error=True
+            )
         try:
             await hass.services.async_call(
                 service_domain,
@@ -831,7 +871,10 @@ class GetCalendarEventsTool(_PersonTool):
     )
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         args = tool_input.tool_args
         try:
@@ -912,7 +955,10 @@ class SearchCalendarEventsTool(_PersonTool):
     )
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         args = tool_input.tool_args
         try:
@@ -935,7 +981,12 @@ class SearchCalendarEventsTool(_PersonTool):
                 events = await _calendar_events(hass, entity_id, start, end)
             except (HomeAssistantError, ValueError) as err:
                 problems.append(
-                    {"person": self.household.reference(person), "problem": "read_failed", "entity_id": entity_id, "message": str(err)}
+                    {
+                        "person": self.household.reference(person),
+                        "problem": "read_failed",
+                        "entity_id": entity_id,
+                        "message": str(err),
+                    }
                 )
                 continue
             for event in events:
@@ -978,7 +1029,10 @@ class CheckCalendarAvailabilityTool(_PersonTool):
     )
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         args = tool_input.tool_args
         try:
@@ -997,7 +1051,12 @@ class CheckCalendarAvailabilityTool(_PersonTool):
                 events = await _calendar_events(hass, entity_id, start, end)
             except (HomeAssistantError, ValueError) as err:
                 problems.append(
-                    {"person": self.household.reference(person), "problem": "read_failed", "entity_id": entity_id, "message": str(err)}
+                    {
+                        "person": self.household.reference(person),
+                        "problem": "read_failed",
+                        "entity_id": entity_id,
+                        "message": str(err),
+                    }
                 )
                 continue
             conflicts = [
@@ -1014,7 +1073,11 @@ class CheckCalendarAvailabilityTool(_PersonTool):
                     "conflicts": conflicts,
                 }
             )
-        result: dict[str, Any] = {"start": start.isoformat(), "end": end.isoformat(), "calendars": calendars}
+        result: dict[str, Any] = {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "calendars": calendars,
+        }
         if problems:
             result["problems"] = problems
         return _result(result, error=not calendars and bool(problems))
@@ -1074,7 +1137,10 @@ class DeleteCalendarEventTool(_PersonTool):
     )
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         args = tool_input.tool_args
         try:
@@ -1087,32 +1153,65 @@ class DeleteCalendarEventTool(_PersonTool):
             return _result({"problems": problems}, error=True)
         person, entity_id, label = target
         entity = _calendar_entity(hass, entity_id)
-        if entity is None or not entity.supported_features & CalendarEntityFeature.DELETE_EVENT:
-            return _result({"error": f"{label} does not support deleting events."}, error=True)
+        if (
+            entity is None
+            or not entity.supported_features & CalendarEntityFeature.DELETE_EVENT
+        ):
+            return _result(
+                {"error": f"{label} does not support deleting events."}, error=True
+            )
         try:
             events = await _calendar_events(hass, entity_id, start, end)
         except (HomeAssistantError, ValueError) as err:
             return _result({"error": str(err)}, error=True)
-        matches = [e for e in events if _event_matches(e, args["uid"], args.get("recurrence_id"))]
+        matches = [
+            e
+            for e in events
+            if _event_matches(e, args["uid"], args.get("recurrence_id"))
+        ]
         if not matches:
-            return _result({"error": "That event was not found in the selected calendar and date range."}, error=True)
+            return _result(
+                {
+                    "error": "That event was not found in the selected calendar and date range."
+                },
+                error=True,
+            )
         if args.get("recurrence_id") and len(matches) != 1:
-            return _result({"error": "That occurrence is ambiguous; search the calendar again."}, error=True)
+            return _result(
+                {"error": "That occurrence is ambiguous; search the calendar again."},
+                error=True,
+            )
         plan = {
-            "action": "delete", "calendar": entity_id, "uid": args["uid"],
+            "action": "delete",
+            "calendar": entity_id,
+            "uid": args["uid"],
             "recurrence_id": args.get("recurrence_id"),
             "event": _event_dict(matches[0]),
         }
-        preview = {"person": self.household.reference(person), "calendar": label, "event": _event_dict(matches[0]), "delete_series": not args.get("recurrence_id")}
+        preview = {
+            "person": self.household.reference(person),
+            "calendar": label,
+            "event": _event_dict(matches[0]),
+            "delete_series": not args.get("recurrence_id"),
+        }
         if confirmation := _calendar_confirmation(
             hass, args, llm_context, action=self.name, plan=plan, preview=preview
         ):
             return confirmation
         try:
-            await entity.async_delete_event(args["uid"], recurrence_id=args.get("recurrence_id"))
+            await entity.async_delete_event(
+                args["uid"], recurrence_id=args.get("recurrence_id")
+            )
         except (HomeAssistantError, ValueError) as err:
             return _result({"error": str(err)}, error=True)
-        return _result({"deleted": True, "person": self.household.reference(person), "calendar": label, "event": preview["event"]})
+        return _result(
+            {
+                "deleted": True,
+                "person": self.household.reference(person),
+                "calendar": label,
+                "event": preview["event"],
+            }
+        )
 
 
 class UpdateCalendarEventTool(_PersonTool):
@@ -1148,7 +1247,10 @@ class UpdateCalendarEventTool(_PersonTool):
     )
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         args = tool_input.tool_args
         try:
@@ -1159,24 +1261,48 @@ class UpdateCalendarEventTool(_PersonTool):
         if end <= start:
             return _result({"error": "end must be after start"}, error=True)
         if bool(args.get("new_start")) != bool(args.get("new_end")):
-            return _result({"error": "Provide both new_start and new_end to change an event time."}, error=True)
-        changes = any(key in args for key in ("summary", "description", "location", "new_start", "new_end"))
+            return _result(
+                {
+                    "error": "Provide both new_start and new_end to change an event time."
+                },
+                error=True,
+            )
+        changes = any(
+            key in args
+            for key in ("summary", "description", "location", "new_start", "new_end")
+        )
         if not changes:
-            return _result({"error": "Provide at least one field to update."}, error=True)
+            return _result(
+                {"error": "Provide at least one field to update."}, error=True
+            )
         target, problems = _one_calendar_target(self.household, args)
         if problems or target is None:
             return _result({"problems": problems}, error=True)
         person, entity_id, label = target
         entity = _calendar_entity(hass, entity_id)
-        if entity is None or not entity.supported_features & CalendarEntityFeature.UPDATE_EVENT:
-            return _result({"error": f"{label} does not support updating events."}, error=True)
+        if (
+            entity is None
+            or not entity.supported_features & CalendarEntityFeature.UPDATE_EVENT
+        ):
+            return _result(
+                {"error": f"{label} does not support updating events."}, error=True
+            )
         try:
             events = await _calendar_events(hass, entity_id, start, end)
         except (HomeAssistantError, ValueError) as err:
             return _result({"error": str(err)}, error=True)
-        matches = [e for e in events if _event_matches(e, args["uid"], args.get("recurrence_id"))]
+        matches = [
+            e
+            for e in events
+            if _event_matches(e, args["uid"], args.get("recurrence_id"))
+        ]
         if len(matches) != 1:
-            return _result({"error": "The event was not found or is ambiguous in the selected calendar and date range."}, error=True)
+            return _result(
+                {
+                    "error": "The event was not found or is ambiguous in the selected calendar and date range."
+                },
+                error=True,
+            )
         event = matches[0]
         event_data: dict[str, Any] = {
             "summary": args.get("summary", event.summary),
@@ -1198,16 +1324,36 @@ class UpdateCalendarEventTool(_PersonTool):
             except ValueError as err:
                 return _result({"error": str(err)}, error=True)
             if all_day != new_end_all_day:
-                return _result({"error": "new_start and new_end must both be dates or both be date times."}, error=True)
+                return _result(
+                    {
+                        "error": "new_start and new_end must both be dates or both be date times."
+                    },
+                    error=True,
+                )
             if new_end <= new_start:
-                return _result({"error": "new_end must be after new_start."}, error=True)
+                return _result(
+                    {"error": "new_end must be after new_start."}, error=True
+                )
             event_data["dtstart"], event_data["dtend"] = new_start, new_end
         plan = {
-            "action": "update", "calendar": entity_id, "uid": args["uid"],
+            "action": "update",
+            "calendar": entity_id,
+            "uid": args["uid"],
             "recurrence_id": args.get("recurrence_id"),
-            "before": _event_dict(event), "event": event_data,
+            "before": _event_dict(event),
+            "event": event_data,
         }
-        preview = {"person": self.household.reference(person), "calendar": label, "before": _event_dict(event), "after": {k: v.isoformat() if isinstance(v, (datetime.date, datetime.datetime)) else v for k, v in event_data.items()}}
+        preview = {
+            "person": self.household.reference(person),
+            "calendar": label,
+            "before": _event_dict(event),
+            "after": {
+                k: v.isoformat()
+                if isinstance(v, (datetime.date, datetime.datetime))
+                else v
+                for k, v in event_data.items()
+            },
+        }
         if confirmation := _calendar_confirmation(
             hass, args, llm_context, action=self.name, plan=plan, preview=preview
         ):
@@ -1256,7 +1402,10 @@ class CreateCalendarEventTool(_PersonTool):
     )
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         args = tool_input.tool_args
         try:
@@ -1264,7 +1413,9 @@ class CreateCalendarEventTool(_PersonTool):
             if args.get("end"):
                 end, end_all_day = _parse_when(args["end"], end=True)
                 if end_all_day != all_day:
-                    raise ValueError("start and end must both be dates or both be date times")
+                    raise ValueError(
+                        "start and end must both be dates or both be date times"
+                    )
             elif all_day:
                 end = start + datetime.timedelta(days=1)
             else:
@@ -1306,7 +1457,11 @@ class CreateCalendarEventTool(_PersonTool):
         }
         preview = {
             "calendars": [
-                {"person": self.household.reference(person), "calendar": label, "entity_id": entity_id}
+                {
+                    "person": self.household.reference(person),
+                    "calendar": label,
+                    "entity_id": entity_id,
+                }
                 for person, entity_id, label in targets
             ],
             "event": data,
@@ -1326,10 +1481,16 @@ class CreateCalendarEventTool(_PersonTool):
                     context=llm_context.context,
                     blocking=True,
                 )
-                created.append({"person": self.household.reference(person), "calendar": label})
+                created.append(
+                    {"person": self.household.reference(person), "calendar": label}
+                )
             except (HomeAssistantError, ValueError) as err:
                 failed.append(
-                    {"person": self.household.reference(person), "calendar": label, "error": str(err)}
+                    {
+                        "person": self.household.reference(person),
+                        "calendar": label,
+                        "error": str(err),
+                    }
                 )
         result: dict[str, Any] = {"created": created}
         if failed:
@@ -1358,7 +1519,10 @@ class GetPersonLocationTool(_PersonTool):
     parameters = vol.Schema({vol.Optional("people"): [str]})
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         people, problems = self._people(tool_input.tool_args, default_to_everyone=True)
         results = []
@@ -1366,12 +1530,20 @@ class GetPersonLocationTool(_PersonTool):
             assigned, usable = self.household.entities(person, LOCATION_DOMAINS)
             if not assigned:
                 results.append(
-                    {"person": self.household.reference(person), "location": None, "reason": "no location entity assigned"}
+                    {
+                        "person": self.household.reference(person),
+                        "location": None,
+                        "reason": "no location entity assigned",
+                    }
                 )
                 continue
             if not usable:
                 results.append(
-                    {"person": self.household.reference(person), "location": None, "reason": "private"}
+                    {
+                        "person": self.household.reference(person),
+                        "location": None,
+                        "reason": "private",
+                    }
                 )
                 continue
             entities = []
@@ -1385,7 +1557,9 @@ class GetPersonLocationTool(_PersonTool):
                     }
                 )
             # Prefer the person entity, which combines all of their trackers.
-            ordered = sorted(entities, key=lambda e: not e["entity_id"].startswith("person."))
+            ordered = sorted(
+                entities, key=lambda e: not e["entity_id"].startswith("person.")
+            )
             known = next((e for e in ordered if e["state"] != "unavailable"), None)
             entry: dict[str, Any] = {
                 "person": self.household.reference(person),
@@ -1404,12 +1578,16 @@ class GetPersonLocationTool(_PersonTool):
                 else:
                     # Plenty of phones have geocoding off; say so rather than leave
                     # a gap the model might fill with a guess.
-                    entry["address_note"] = _no_address_note(self.household.speaker, person)
+                    entry["address_note"] = _no_address_note(
+                        self.household.speaker, person
+                    )
             # How long they have been at the reported location, ready to say aloud.
             # With no address outside a zone, the exact address note is the reply.
-            if known and "address_note" not in entry and (
-                state := hass.states.get(known["entity_id"])
-            ) is not None:
+            if (
+                known
+                and "address_note" not in entry
+                and (state := hass.states.get(known["entity_id"])) is not None
+            ):
                 entry["since"] = dt_util.as_local(state.last_changed).isoformat()
                 entry["since_spoken"] = _since_spoken(
                     entry["location"], state.last_changed, dt_util.utcnow()
@@ -1419,7 +1597,6 @@ class GetPersonLocationTool(_PersonTool):
         if problems:
             data["problems"] = problems
         return _result(data, error=not results and bool(problems))
-
 
     def _trackers_to_try(
         self,
@@ -1437,7 +1614,11 @@ class GetPersonLocationTool(_PersonTool):
                 found.append(source)
         for entity_id, _ in usable:
             state = hass.states.get(entity_id)
-            if entity_id.startswith("device_tracker.") and state and state.state == "not_home":
+            if (
+                entity_id.startswith("device_tracker.")
+                and state
+                and state.state == "not_home"
+            ):
                 found.append(entity_id)
         return list(dict.fromkeys(found))
 
@@ -1466,7 +1647,10 @@ class GetPersonLocationHistoryTool(_PersonTool):
     )
 
     async def async_call(
-        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
     ):
         args = tool_input.tool_args
         try:
@@ -1477,7 +1661,9 @@ class GetPersonLocationHistoryTool(_PersonTool):
         if end <= start:
             return _result({"error": "end must be after start"}, error=True)
         if end - start > _MAX_HISTORY_RANGE:
-            return _result({"error": "Location history is limited to a 31-day range."}, error=True)
+            return _result(
+                {"error": "Location history is limited to a 31-day range."}, error=True
+            )
 
         people, problems = self._people(args)
         requested: dict[str, tuple[Person, str]] = {}
@@ -1485,10 +1671,22 @@ class GetPersonLocationHistoryTool(_PersonTool):
         for person in people:
             assigned, usable = self.household.entities(person, LOCATION_DOMAINS)
             if not assigned:
-                results.append({"person": self.household.reference(person), "history": [], "reason": "no location entity assigned"})
+                results.append(
+                    {
+                        "person": self.household.reference(person),
+                        "history": [],
+                        "reason": "no location entity assigned",
+                    }
+                )
                 continue
             if not usable:
-                results.append({"person": self.household.reference(person), "history": [], "reason": "private"})
+                results.append(
+                    {
+                        "person": self.household.reference(person),
+                        "history": [],
+                        "reason": "private",
+                    }
+                )
                 continue
             for entity_id, label in usable:
                 requested[entity_id] = (person, label)
@@ -1499,7 +1697,9 @@ class GetPersonLocationHistoryTool(_PersonTool):
                     hass, list(requested), dt_util.as_utc(start), dt_util.as_utc(end)
                 )
             except (HomeAssistantError, KeyError, RuntimeError, ValueError) as err:
-                return _result({"error": f"Location history is unavailable: {err}"}, error=True)
+                return _result(
+                    {"error": f"Location history is unavailable: {err}"}, error=True
+                )
             now = dt_util.utcnow()
             timelines: dict[str, list[dict[str, Any]]] = {p.user_id: [] for p in people}
             titles = {p.user_id: self.household.reference(p) for p in people}
@@ -1521,17 +1721,27 @@ class GetPersonLocationHistoryTool(_PersonTool):
                     timelines[person.user_id].append(item)
                     prior = state
             for person in people:
-                timeline = sorted(timelines[person.user_id], key=lambda item: item["at"])
+                timeline = sorted(
+                    timelines[person.user_id], key=lambda item: item["at"]
+                )
                 was_truncated = len(timeline) > 100
                 results.append(
                     {
                         "person": titles[person.user_id],
                         "history": timeline[-100:],
                         **({"truncated": True} if was_truncated else {}),
-                        **({"reason": "no history recorded in that period"} if not timeline else {}),
+                        **(
+                            {"reason": "no history recorded in that period"}
+                            if not timeline
+                            else {}
+                        ),
                     }
                 )
-        data: dict[str, Any] = {"start": start.isoformat(), "end": end.isoformat(), "people": results}
+        data: dict[str, Any] = {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "people": results,
+        }
         if problems:
             data["problems"] = problems
         return _result(data, error=not results and bool(problems))
@@ -1575,7 +1785,11 @@ def _day_part(hour: int, *, today: bool) -> str:
 
 
 def _ordinal(day: int) -> str:
-    suffix = "th" if 11 <= day % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    suffix = (
+        "th"
+        if 11 <= day % 100 <= 13
+        else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    )
     return f"{day}{suffix}"
 
 
@@ -1601,7 +1815,9 @@ def _since_phrase(changed: datetime.datetime, now: datetime.datetime) -> str:
     return f"the {_ordinal(changed.day)} of {changed.strftime('%B')}"
 
 
-def _since_spoken(location: str, changed: datetime.datetime, now: datetime.datetime) -> str:
+def _since_spoken(
+    location: str, changed: datetime.datetime, now: datetime.datetime
+) -> str:
     """Say where someone is and since when, for example "home since three o'clock"."""
     phrase = _since_phrase(changed, now)
     if phrase == "just now":

@@ -175,7 +175,7 @@
       "preview": {
         "title": "Preview prompt",
         "description": "Choose Unknown speaker or a configured person to see the prompt text generated for that speaker.",
-        "data": {"user_id": "Person"}
+        "data": { "user_id": "Person" }
       },
       "preview_result": {
         "title": "Generated prompt",

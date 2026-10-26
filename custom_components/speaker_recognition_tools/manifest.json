@@ -1,9 +1,7 @@
 {
   "domain": "speaker_recognition_tools",
   "name": "Speaker Recognition Tools",
-  "codeowners": [
-    "@PrimusNZ"
-  ],
+  "codeowners": ["@PrimusNZ"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/PrimusNZ/speaker-recognition-tools",

@@ -18,12 +18,12 @@ This applies to `[direct address]` substitute tags in the conversation agent's p
 
 When the person asks who they are, use exactly the sentence for their configured fields:
 
-| Third-person reference | Address as | Answer |
-| --- | --- | --- |
-| Set | Set | `You are THIRDPERSON, your form of address is ADDRESS_AS, and your name is NAME.` |
-| Not set | Set | `Your form of address is ADDRESS_AS, and your name is NAME.` |
-| Set | Not set | `You are THIRDPERSON, and your name is NAME.` |
-| Not set | Not set | `Your name is NAME.` |
+| Third-person reference | Address as | Answer                                                                            |
+| ---------------------- | ---------- | --------------------------------------------------------------------------------- |
+| Set                    | Set        | `You are THIRDPERSON, your form of address is ADDRESS_AS, and your name is NAME.` |
+| Not set                | Set        | `Your form of address is ADDRESS_AS, and your name is NAME.`                      |
+| Set                    | Not set    | `You are THIRDPERSON, and your name is NAME.`                                     |
+| Not set                | Not set    | `Your name is NAME.`                                                              |
 
 ## Referring to people
 

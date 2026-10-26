@@ -11,11 +11,17 @@ DEVICE_API_ID = f"{DOMAIN}_device"
 DEVICE_API_NAME = "Speaking Device"
 
 SUBENTRY_SPEAKER = "speaker"  # one subentry per person: data {user_id, address_as, entities, private_entities}
-SUBENTRY_ENTITY_LINK = "entity_link"  # one named device link with a status entity and an action entity
-SUBENTRY_PREVIEW = "full_prompt_preview"  # transient integration-level prompt preview flow
+SUBENTRY_ENTITY_LINK = (
+    "entity_link"  # one named device link with a status entity and an action entity
+)
+SUBENTRY_PREVIEW = (
+    "full_prompt_preview"  # transient integration-level prompt preview flow
+)
 CONF_USER_ID = "user_id"
 CONF_ADDRESS_AS = "address_as"  # Optional direct-address form shown as "Address as".
-CONF_LEGACY_ADDRESS_AS = "title"  # Read existing entries created before the field was renamed.
+CONF_LEGACY_ADDRESS_AS = (
+    "title"  # Read existing entries created before the field was renamed.
+)
 CONF_THIRD_PERSON_REFERENCE = "third_person_reference"
 CONF_ENTITIES = "entities"  # optional list of entity ids
 CONF_ENTITY_ALIASES = "entity_aliases"  # entity id to alternate names
@@ -26,7 +32,9 @@ CONF_LINK_STATE_ENTITY = "state_entity"
 CONF_LINK_ACTION_ENTITY = "action_entity"
 CONF_LINK_PRIVATE = "private"
 CONF_UNKNOWN_ADDRESS_AS = "unknown_address_as"
-CONF_LEGACY_UNKNOWN_ADDRESS_AS = "unknown_title"  # Read existing options saved before the field was renamed.
+CONF_LEGACY_UNKNOWN_ADDRESS_AS = (
+    "unknown_title"  # Read existing options saved before the field was renamed.
+)
 CONF_DENY_UNKNOWN = "deny_unknown"
 CONF_REFUSAL_LINES = "refusal_lines"  # one line per row
 

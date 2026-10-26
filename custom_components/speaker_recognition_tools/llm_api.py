@@ -4,33 +4,35 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import area_registry as ar, device_registry as dr, llm
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import llm
 
 from .const import (
+    CONF_ADDRESS_AS,
     CONF_DENY_UNKNOWN,
-    CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
-    CONF_PRIVATE_ENTITIES,
+    CONF_ENTITY_ALIASES,
+    CONF_LEGACY_ADDRESS_AS,
+    CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_LINK_ACTION_ENTITY,
     CONF_LINK_ALIASES,
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
+    CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
-    CONF_ADDRESS_AS,
-    CONF_LEGACY_ADDRESS_AS,
-    CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_THIRD_PERSON_REFERENCE,
-    CONF_USER_ID,
-    SUBENTRY_SPEAKER,
-    SUBENTRY_ENTITY_LINK,
     CONF_UNKNOWN_ADDRESS_AS,
+    CONF_USER_ID,
     DEFAULT_REFUSAL_LINES,
     DEFAULT_UNKNOWN_ADDRESS_AS,
     DEVICE_API_ID,
     DEVICE_API_NAME,
     PERSON_API_ID,
     PERSON_API_NAME,
+    SUBENTRY_ENTITY_LINK,
+    SUBENTRY_SPEAKER,
 )
 from .prompt import Person, build_device_prompt, build_person_prompt
 from .tools import build_tools
@@ -83,7 +85,10 @@ class SpeakingPersonAPI(llm.API):
                 state = self.hass.states.get(entity_id)
                 entities.append((entity_id, state.name if state else entity_id))
             name = _first_name(account.name) if account else None
-            address_as = sub.data.get(CONF_ADDRESS_AS, sub.data.get(CONF_LEGACY_ADDRESS_AS)) or ""
+            address_as = (
+                sub.data.get(CONF_ADDRESS_AS, sub.data.get(CONF_LEGACY_ADDRESS_AS))
+                or ""
+            )
             if not name:
                 continue  # no configured address form and no account name to fall back on
             entity_aliases = tuple(
@@ -105,7 +110,9 @@ class SpeakingPersonAPI(llm.API):
 
         lines = [
             line.strip()
-            for line in options.get(CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES).splitlines()
+            for line in options.get(
+                CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES
+            ).splitlines()
             if line.strip()
         ]
         prompt = build_person_prompt(
@@ -147,7 +154,9 @@ class SpeakingDeviceAPI(llm.API):
                     if hasattr(dr, "async_get_effective_area_id")
                     else device.area_id
                 )
-                if area_id and (area := ar.async_get(self.hass).async_get_area(area_id)):
+                if area_id and (
+                    area := ar.async_get(self.hass).async_get_area(area_id)
+                ):
                     area_name = area.name
         prompt = build_device_prompt(
             device_id=llm_context.device_id,

@@ -1,22 +1,25 @@
 """End-to-end tests of the injected prompt through the registered LLM APIs."""
 
+from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import Context, HomeAssistant
-from homeassistant.helpers import area_registry as ar, device_registry as dr, llm
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import llm
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
+    CONF_ADDRESS_AS,
     CONF_DENY_UNKNOWN,
-    CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
-    CONF_REFUSAL_LINES,
+    CONF_ENTITY_ALIASES,
+    CONF_LEGACY_ADDRESS_AS,
+    CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_LINK_ACTION_ENTITY,
     CONF_LINK_ALIASES,
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
-    CONF_ADDRESS_AS,
-    CONF_LEGACY_ADDRESS_AS,
-    CONF_LEGACY_UNKNOWN_ADDRESS_AS,
+    CONF_REFUSAL_LINES,
     CONF_TOOL_TYPE,
     CONF_UNKNOWN_ADDRESS_AS,
     CONF_USER_ID,
@@ -25,12 +28,11 @@ from custom_components.speaker_recognition_tools.const import (
     DOMAIN,
     PERSON_API_ID,
     PERSON_API_NAME,
-    TOOL_TYPE_DEVICE,
-    SUBENTRY_SPEAKER,
     SUBENTRY_ENTITY_LINK,
+    SUBENTRY_SPEAKER,
+    TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
 )
-from homeassistant.config_entries import ConfigSubentryData
 
 
 async def _setup(hass: HomeAssistant, deny: bool = False, linked: bool = False):
@@ -67,7 +69,8 @@ async def _setup(hass: HomeAssistant, deny: bool = False, linked: bool = False):
                     CONF_ENTITIES: ["calendar.sarah", "calendar.gone"],
                 },
             ),
-        ] + (
+        ]
+        + (
             [
                 ConfigSubentryData(
                     subentry_type=SUBENTRY_ENTITY_LINK,
@@ -115,9 +118,14 @@ async def _prompt(hass: HomeAssistant, user_id: str | None) -> str:
 async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> None:
     james = await _setup(hass)
     text = await _prompt(hass, james.id)
-    assert 'answer exactly "Your form of address is Dad, and your name is James."' in text
+    assert (
+        'answer exactly "Your form of address is Dad, and your name is James."' in text
+    )
     assert "## ENTITY MAPPINGS" in text
-    assert "### James (Dad) [current speaker]\nCalendars:\n - calendar.james: James Calendar" in text
+    assert (
+        "### James (Dad) [current speaker]\nCalendars:\n - calendar.james: James Calendar"
+        in text
+    )
     assert (
         "### Sarah (Mum)\nCalendars:\n"
         " - calendar.sarah: Sarah Calendar\n"
@@ -125,10 +133,15 @@ async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> No
     ) in text
 
 
-async def test_linked_device_is_injected_with_shared_status_and_action_name(hass: HomeAssistant) -> None:
+async def test_linked_device_is_injected_with_shared_status_and_action_name(
+    hass: HomeAssistant,
+) -> None:
     james = await _setup(hass, linked=True)
     text = await _prompt(hass, james.id)
-    assert "Linked devices:\n - Demo unit (also called Lab station, Test console): status binary_sensor.demo_unit_status; actions button.demo_unit_action" in text
+    assert (
+        "Linked devices:\n - Demo unit (also called Lab station, Test console): status binary_sensor.demo_unit_status; actions button.demo_unit_action"
+        in text
+    )
 
 
 async def test_pre_address_as_settings_remain_supported(hass: HomeAssistant) -> None:
@@ -142,7 +155,11 @@ async def test_pre_address_as_settings_remain_supported(hass: HomeAssistant) -> 
                 subentry_type=SUBENTRY_SPEAKER,
                 title="James: Dad",
                 unique_id=james.id,
-                data={CONF_USER_ID: james.id, CONF_LEGACY_ADDRESS_AS: "Dad", CONF_ENTITIES: []},
+                data={
+                    CONF_USER_ID: james.id,
+                    CONF_LEGACY_ADDRESS_AS: "Dad",
+                    CONF_ENTITIES: [],
+                },
             )
         ],
     )
@@ -241,7 +258,9 @@ async def test_missing_address_as_falls_back_to_first_name(hass: HomeAssistant) 
 
 async def test_only_first_names_reach_the_prompt(hass: HomeAssistant) -> None:
     james = await hass.auth.async_create_user("James Smith", group_ids=["system-users"])
-    sarah = await hass.auth.async_create_user("Sarah Anne Jones", group_ids=["system-users"])
+    sarah = await hass.auth.async_create_user(
+        "Sarah Anne Jones", group_ids=["system-users"]
+    )
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
@@ -251,13 +270,21 @@ async def test_only_first_names_reach_the_prompt(hass: HomeAssistant) -> None:
                 subentry_type=SUBENTRY_SPEAKER,
                 title="James Smith: Dad",
                 unique_id=james.id,
-                data={CONF_USER_ID: james.id, CONF_ADDRESS_AS: "Dad", CONF_ENTITIES: []},
+                data={
+                    CONF_USER_ID: james.id,
+                    CONF_ADDRESS_AS: "Dad",
+                    CONF_ENTITIES: [],
+                },
             ),
             ConfigSubentryData(
                 subentry_type=SUBENTRY_SPEAKER,
                 title="Sarah Anne Jones: Mum",
                 unique_id=sarah.id,
-                data={CONF_USER_ID: sarah.id, CONF_ADDRESS_AS: "Mum", CONF_ENTITIES: []},
+                data={
+                    CONF_USER_ID: sarah.id,
+                    CONF_ADDRESS_AS: "Mum",
+                    CONF_ENTITIES: [],
+                },
             ),
         ],
     )
@@ -267,11 +294,16 @@ async def test_only_first_names_reach_the_prompt(hass: HomeAssistant) -> None:
     for user_id in (james.id, sarah.id, None):
         text = await _prompt(hass, user_id)
         assert "Smith" not in text and "Jones" not in text and "Anne" not in text
-    assert 'answer exactly "Your form of address is Dad, and your name is James."' in await _prompt(hass, james.id)
+    assert (
+        'answer exactly "Your form of address is Dad, and your name is James."'
+        in await _prompt(hass, james.id)
+    )
     assert "### Sarah (Mum)" in await _prompt(hass, james.id)
 
 
-async def test_person_api_tools_only_for_recognised_speakers(hass: HomeAssistant) -> None:
+async def test_person_api_tools_only_for_recognised_speakers(
+    hass: HomeAssistant,
+) -> None:
     james = await _setup(hass)
     instance = await _instance(hass, james.id)
     assert [t.name for t in instance.tools] == [
@@ -399,7 +431,6 @@ async def test_device_api_does_not_register_person_api(hass: HomeAssistant) -> N
     ids = {a.id for a in llm.async_get_apis(hass)}
     assert DEVICE_API_ID in ids
     assert PERSON_API_ID not in ids
-
 
 
 async def test_device_api_includes_the_devices_area(hass: HomeAssistant) -> None:

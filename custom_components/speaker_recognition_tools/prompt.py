@@ -78,7 +78,11 @@ def _line(
     aliases: tuple[str, ...] = (),
 ) -> str:
     label = " ".join((aliases[0] if aliases else label).split())
-    text = f" - {entity_id}: {label}" if label and label != entity_id else f" - {entity_id}"
+    text = (
+        f" - {entity_id}: {label}"
+        if label and label != entity_id
+        else f" - {entity_id}"
+    )
     if len(aliases) > 1:
         text += f" (other aliases: {', '.join(aliases[1:])})"
     return text
@@ -94,7 +98,9 @@ def _person_block(person: Person, current: bool) -> str:
     if not visible:
         entity_text = "(no entities)"
         link_text = _linked_devices_text(person, current)
-        return f"{block_heading}\n{entity_text}" + (f"\n\n{link_text}" if link_text else "")
+        return f"{block_heading}\n{entity_text}" + (
+            f"\n\n{link_text}" if link_text else ""
+        )
     # A blank line between groups keeps a markdown renderer from folding the next
     # group's heading into the last list item.
     groups = []
@@ -111,7 +117,12 @@ def _person_block(person: Person, current: bool) -> str:
             )
             groups.append("\n".join(lines))
     link_text = _linked_devices_text(person, current)
-    return block_heading + "\n" + "\n\n".join(groups) + (f"\n\n{link_text}" if link_text else "")
+    return (
+        block_heading
+        + "\n"
+        + "\n\n".join(groups)
+        + (f"\n\n{link_text}" if link_text else "")
+    )
 
 
 def _linked_devices_text(person: Person, current: bool) -> str:
@@ -144,7 +155,11 @@ def _people_list_text(people: list[Person]) -> str:
         return ""
     lines = "\n".join(
         f" - {_label(p.name, p.direct_address)}"
-        + (f" (third-person: {p.third_person_form})" if p.third_person_form != p.direct_address else "")
+        + (
+            f" (third-person: {p.third_person_form})"
+            if p.third_person_form != p.direct_address
+            else ""
+        )
         for p in _alphabetical(people)
     )
     return (
@@ -171,9 +186,9 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "aliases shown for it are alternate names for that same entity. A linked "
             "device's listed alternate names refer to the same device and work for "
             "both status and action requests. When a "
-        "tool asks which entity to use, pass its exact entity_id or a configured "
-        "alias. For a request about a person, use only the entities "
-        "listed under "
+            "tool asks which entity to use, pass its exact entity_id or a configured "
+            "alias. For a request about a person, use only the entities "
+            "listed under "
             "that person. A request naming two or more people who each have a "
             "matching type of entity (such as a calendar) uses the matching "
             "entities of each. If a person has more than one entity of the "
@@ -221,7 +236,9 @@ def _build_person_text(
     configured_address_as = (
         speaker_person.address_as
         if speaker_person
-        else speakers.get(user_id) if user_id else None
+        else speakers.get(user_id)
+        if user_id
+        else None
     )
     name = (speaker_person.name if speaker_person else None) or user_name
     direct_address = configured_address_as or (
@@ -229,12 +246,10 @@ def _build_person_text(
     )
     has_address_as = bool(configured_address_as)
     if direct_address and name:
-        third_person = (
-            speaker_person.third_person_reference
-            if speaker_person
-            else None
+        third_person = speaker_person.third_person_reference if speaker_person else None
+        third_person_form = (
+            third_person or configured_address_as or name or direct_address
         )
-        third_person_form = third_person or configured_address_as or name or direct_address
         identity_name = name
         if third_person and has_address_as:
             identity_answer = (
@@ -242,11 +257,11 @@ def _build_person_text(
                 f"and your name is {identity_name}."
             )
         elif third_person:
-            identity_answer = f"You are {third_person}, and your name is {identity_name}."
-        elif has_address_as:
             identity_answer = (
-                f"Your form of address is {configured_address_as}, and your name is {identity_name}."
+                f"You are {third_person}, and your name is {identity_name}."
             )
+        elif has_address_as:
+            identity_answer = f"Your form of address is {configured_address_as}, and your name is {identity_name}."
         else:
             identity_answer = f"Your name is {identity_name}."
         return (

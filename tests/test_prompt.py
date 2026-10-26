@@ -26,10 +26,18 @@ def test_person_heading(prompt):
 def test_known_speaker_gets_address_as_and_name(prompt):
     text = person(prompt, user_id="u1", user_name="James")
     assert "Address them as Dad." in text
-    assert 'answer exactly "Your form of address is Dad, and your name is James."' in text
-    assert "An exact tool reply meant to be spoken directly to the current speaker may use 'you' or 'your'" in text
+    assert (
+        'answer exactly "Your form of address is Dad, and your name is James."' in text
+    )
+    assert (
+        "An exact tool reply meant to be spoken directly to the current speaker may use 'you' or 'your'"
+        in text
+    )
     assert "shows [direct address] in an example or a rule" in text
-    assert "direct-address form (their configured form of address, or their first name if none is set), which is Dad" in text
+    assert (
+        "direct-address form (their configured form of address, or their first name if none is set), which is Dad"
+        in text
+    )
 
 
 def test_known_speaker_without_user_name(prompt):
@@ -40,7 +48,9 @@ def test_known_speaker_without_user_name(prompt):
         people=[prompt.Person("u2", "Sarah", "Mum")],
     )
     assert "identifies the speaker as Sarah" in text
-    assert 'answer exactly "Your form of address is Mum, and your name is Sarah."' in text
+    assert (
+        'answer exactly "Your form of address is Mum, and your name is Sarah."' in text
+    )
 
 
 def test_third_person_reference_is_separate_from_direct_address(prompt):
@@ -57,10 +67,16 @@ def test_third_person_reference_is_separate_from_direct_address(prompt):
     )
     assert "Address them as Mum." in text
     assert "For this speaker, the third-person form is The mother." in text
-    assert 'answer exactly "You are The mother, your form of address is Mum, and your name is Alex."' in text
+    assert (
+        'answer exactly "You are The mother, your form of address is Mum, and your name is Alex."'
+        in text
+    )
     assert "including in tool results" in text
     assert "Third-person reference: The father" in text
-    assert "if none is set, use their configured form of address; if none is set, use their first name" in text
+    assert (
+        "if none is set, use their configured form of address; if none is set, use their first name"
+        in text
+    )
 
 
 def test_reference_falls_back_to_address_as_then_name(prompt):
@@ -78,7 +94,10 @@ def test_reference_falls_back_to_address_as_then_name(prompt):
         people=[untitled],
     )
     assert "Address them as James." in text
-    assert "direct-address form (their configured form of address, or their first name if none is set), which is James" in text
+    assert (
+        "direct-address form (their configured form of address, or their first name if none is set), which is James"
+        in text
+    )
     assert 'answer exactly "Your name is James."' in text
 
     titled_by_reference = prompt.Person(
@@ -140,9 +159,9 @@ def test_unknown_speaker_denied(prompt, user_id):
 
 
 def test_device_heading(prompt):
-    assert prompt.build_device_prompt(
-        device_id=None, device_name=None
-    ).startswith("## SPEAKING DEVICE\n\n")
+    assert prompt.build_device_prompt(device_id=None, device_name=None).startswith(
+        "## SPEAKING DEVICE\n\n"
+    )
 
 
 def test_device_unknown(prompt):
@@ -177,18 +196,31 @@ def people(prompt, *, entities=False):
 
 
 def test_section_heading_and_intro(prompt):
-    text = person(prompt, user_id="u1", user_name="James", people=people(prompt, entities=True))
-    assert "\n\n## ENTITY MAPPINGS\n\nBelow is a list of people and the entities that relate to them." in text
-    assert "People may identify someone by their first name, configured form of address or third-person reference" in text
+    text = person(
+        prompt, user_id="u1", user_name="James", people=people(prompt, entities=True)
+    )
+    assert (
+        "\n\n## ENTITY MAPPINGS\n\nBelow is a list of people and the entities that relate to them."
+        in text
+    )
+    assert (
+        "People may identify someone by their first name, configured form of address or third-person reference"
+        in text
+    )
     assert '"my", "me" or "I" means Dad, the current speaker.' in text
-    assert "A request naming two or more people who each have a matching type of entity (such as a calendar) uses the matching entities of each." in text
+    assert (
+        "A request naming two or more people who each have a matching type of entity (such as a calendar) uses the matching entities of each."
+        in text
+    )
     assert "If a person has more than one entity of the type needed" in text
     assert "ask which one is meant before acting" in text
     assert "Sarah" not in text.split("## ENTITY MAPPINGS")[1].split("###")[0]
 
 
 def test_person_blocks_with_grouped_entities(prompt):
-    text = person(prompt, user_id="u1", user_name="James", people=people(prompt, entities=True))
+    text = person(
+        prompt, user_id="u1", user_name="James", people=people(prompt, entities=True)
+    )
     assert (
         "### James (Dad) [current speaker]\n"
         "Calendars:\n"
@@ -226,11 +258,25 @@ def test_linked_device_shows_shared_name_for_status_and_action(prompt):
         "u1",
         "James",
         "Dad",
-        entity_links=(("Demo unit", "binary_sensor.demo_unit_status", "button.demo_unit_action", False, ("Lab station", "Test console")),),
+        entity_links=(
+            (
+                "Demo unit",
+                "binary_sensor.demo_unit_status",
+                "button.demo_unit_action",
+                False,
+                ("Lab station", "Test console"),
+            ),
+        ),
     )
     text = person(prompt, user_id="u1", user_name="James", people=[james])
-    assert "Linked devices:\n - Demo unit (also called Lab station, Test console): status binary_sensor.demo_unit_status; actions button.demo_unit_action" in text
-    assert "alternate names refer to the same device and work for both status and action requests" in text
+    assert (
+        "Linked devices:\n - Demo unit (also called Lab station, Test console): status binary_sensor.demo_unit_status; actions button.demo_unit_action"
+        in text
+    )
+    assert (
+        "alternate names refer to the same device and work for both status and action requests"
+        in text
+    )
     assert "the same spoken name resolves to its status entity" in text
 
 
@@ -239,7 +285,15 @@ def test_private_linked_device_is_hidden_from_other_people(prompt):
         "u1",
         "James",
         "Dad",
-        entity_links=(("Demo unit", "binary_sensor.demo_unit_status", "button.demo_unit_action", True, ("Lab station", "Test console")),),
+        entity_links=(
+            (
+                "Demo unit",
+                "binary_sensor.demo_unit_status",
+                "button.demo_unit_action",
+                True,
+                ("Lab station", "Test console"),
+            ),
+        ),
     )
     sarah = prompt.Person("u2", "Sarah", "Mum")
     text = person(prompt, user_id="u2", user_name="Sarah", people=[james, sarah])
@@ -280,7 +334,10 @@ def test_groups_and_order(prompt):
     text = person(
         prompt,
         user_id="u1",
-        people=[P(prompt, "u1", "James", "Dad", *ents), P(prompt, "u2", "Sarah", "Mum")],
+        people=[
+            P(prompt, "u1", "James", "Dad", *ents),
+            P(prompt, "u2", "Sarah", "Mum"),
+        ],
     )
     assert (
         "Calendars:\n - calendar.work: Work\n\n"
@@ -296,12 +353,19 @@ def test_unknown_speaker_gets_address_forms_but_no_entities(prompt):
         assert "calendar." not in text
         assert "\n\n## PEOPLE\n\nBelow is a list of the people in this home" in text
         assert " - James (Dad)\n - Sarah (Mum)\n - Tom (Grandad)" in text
-        assert "if none is set, use their configured form of address; if none is set, use their first name" in text
+        assert (
+            "if none is set, use their configured form of address; if none is set, use their first name"
+            in text
+        )
         assert "current speaker" not in text.split("## PEOPLE")[1]
 
 
 def test_unknown_speaker_address_forms_sorted_alphabetically(prompt):
-    ps = [P(prompt, "a", "Zoe", "Aunt"), P(prompt, "b", "adam", "Uncle"), P(prompt, "c", None, "Gran")]
+    ps = [
+        P(prompt, "a", "Zoe", "Aunt"),
+        P(prompt, "b", "adam", "Uncle"),
+        P(prompt, "c", None, "Gran"),
+    ]
     text = person(prompt, people=ps)
     assert " - adam (Uncle)\n - Gran\n - Zoe (Aunt)" in text
 
@@ -318,7 +382,10 @@ def test_people_are_alphabetical_with_current_speaker_in_place(prompt):
         P(prompt, "d", "Kim", "Gran"),
     ]
     text = person(prompt, user_id="c", user_name="Mia", people=ps)
-    order = [text.index(f"### {h}") for h in ("Adam (Uncle)", "Kim (Gran)", "Mia (Sis)", "Zoe (Aunt)")]
+    order = [
+        text.index(f"### {h}")
+        for h in ("Adam (Uncle)", "Kim (Gran)", "Mia (Sis)", "Zoe (Aunt)")
+    ]
     assert order == sorted(order)
 
 
@@ -349,7 +416,14 @@ def test_label_equal_to_id_or_multiline_is_clean(prompt):
         prompt,
         user_id="u1",
         people=[
-            P(prompt, "u1", "James", "Dad", ("calendar.a", "calendar.a"), ("calendar.b", "x\ny")),
+            P(
+                prompt,
+                "u1",
+                "James",
+                "Dad",
+                ("calendar.a", "calendar.a"),
+                ("calendar.b", "x\ny"),
+            ),
             P(prompt, "u2", "Sarah", "Mum"),
         ],
     )
@@ -365,7 +439,9 @@ def test_denied_speaker_reveals_no_people(prompt):
 
 def test_title_same_as_name_is_not_repeated(prompt):
     ps = [P(prompt, "u1", "Tom", "Tom"), P(prompt, "u2", "Ann", "Aunt")]
-    text = person(prompt, user_id="u1", user_name="Tom", people=ps, speakers={"u1": "Tom"})
+    text = person(
+        prompt, user_id="u1", user_name="Tom", people=ps, speakers={"u1": "Tom"}
+    )
     assert 'answer exactly "Your form of address is Tom, and your name is Tom."' in text
     assert "### Tom [current speaker]" in text
     assert "Tom (Tom)" not in text
@@ -386,13 +462,17 @@ def _private_people(prompt):
 
 
 def test_other_peoples_private_entities_are_left_out(prompt):
-    text = person(prompt, user_id="u1", user_name="James", people=_private_people(prompt))
+    text = person(
+        prompt, user_id="u1", user_name="James", people=_private_people(prompt)
+    )
     assert " - calendar.home: Home" in text
     assert "calendar.diary" not in text
 
 
 def test_own_private_entities_are_shown_without_privacy_markers(prompt):
-    text = person(prompt, user_id="u2", user_name="Sarah", people=_private_people(prompt))
+    text = person(
+        prompt, user_id="u2", user_name="Sarah", people=_private_people(prompt)
+    )
     assert " - calendar.diary: Diary" in text
     assert " - calendar.home: Home\n" in text + "\n"
     assert "(private)" not in text
@@ -402,7 +482,13 @@ def test_own_private_entities_are_shown_without_privacy_markers(prompt):
 def test_person_with_only_private_entities_shows_none_to_others(prompt):
     ps = [
         P(prompt, "u1", "James", "Dad"),
-        prompt.Person("u2", "Sarah", "Mum", (("calendar.diary", "Diary"),), frozenset({"calendar.diary"})),
+        prompt.Person(
+            "u2",
+            "Sarah",
+            "Mum",
+            (("calendar.diary", "Diary"),),
+            frozenset({"calendar.diary"}),
+        ),
     ]
     text = person(prompt, user_id="u1", user_name="James", people=ps)
     assert "### Sarah (Mum)\n(no entities)" in text
@@ -410,7 +496,9 @@ def test_person_with_only_private_entities_shows_none_to_others(prompt):
 
 
 def test_prompt_names_the_tools(prompt):
-    text = person(prompt, user_id="u1", user_name="James", people=_private_people(prompt))
+    text = person(
+        prompt, user_id="u1", user_name="James", people=_private_people(prompt)
+    )
     for name in (
         "get_entity_state",
         "control_assigned_entity",
@@ -436,7 +524,10 @@ def test_group_headings_never_follow_a_list_item_directly(prompt):
     text = person(
         prompt,
         user_id="u1",
-        people=[P(prompt, "u1", "James", "Dad", *ents), P(prompt, "u2", "Sarah", "Mum")],
+        people=[
+            P(prompt, "u1", "James", "Dad", *ents),
+            P(prompt, "u2", "Sarah", "Mum"),
+        ],
     )
     lines = text.splitlines()
     for i, line in enumerate(lines):
@@ -450,11 +541,16 @@ def test_device_area_makes_here_and_this_room_resolve(prompt):
         device_id="abc123", device_name="Kitchen", area_name="Lounge"
     )
     assert "id abc123 (Kitchen)" in text
-    assert 'The device is in the Lounge area, so "here" and "this room" mean the Lounge.' in text
+    assert (
+        'The device is in the Lounge area, so "here" and "this room" mean the Lounge.'
+        in text
+    )
 
 
 def test_device_without_area_says_nothing_about_it(prompt):
     text = prompt.build_device_prompt(device_id="abc123", device_name="Kitchen")
     assert "area" not in text
-    text = prompt.build_device_prompt(device_id=None, device_name=None, area_name="Lounge")
+    text = prompt.build_device_prompt(
+        device_id=None, device_name=None, area_name="Lounge"
+    )
     assert "area" not in text and "is not known" in text

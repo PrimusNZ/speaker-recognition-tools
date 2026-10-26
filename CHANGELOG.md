@@ -6,53 +6,67 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.6.0] - 2026-10-26
 
 ### Added
+
 - Add tools to read assigned entity states and call Home Assistant services on assigned entities, with per-person privacy checks.
 
 ## [0.6.0.1] - 2026-10-26
 
 ### Added
+
 - Add linked devices that map one spoken name to separate status and action entities.
 
 ## [Unreleased]
 
+### Developer
+
+- Add Ruff and Prettier configuration and formatting commands.
+
 ## [0.6.0.3] - 2026-10-26
 
 ### Changed
+
 - List people alphabetically in entity mappings instead of putting the current speaker first.
 - Omit privacy markers and privacy instructions from prompt text while continuing to enforce privacy in tools.
 
 ## [0.6.0.2] - 2026-10-26
 
 ### Fixed
+
 - Complete linked-device support by routing aliases to the configured status and action entities.
 - Place linked-device reconfigure translations under the supported flow step section.
 
 ### Documentation
+
 - Use synthetic location examples in the README and tests.
 
 ## [0.5.0.2] - 2026-10-26
 
 ### Fixed
+
 - Use a reported street and town as the location when someone is outside every zone, instead of describing them as away.
 
 ## [0.5.0.1] - 2026-10-26
 
 ### Fixed
+
 - Use a colon between entity IDs and display names in prompt mappings, matching the aliases field format.
 
 ## [0.4.0] - 2026-10-26
 
 ### Added
+
 - Allow aliases to be assigned to a person's entities, shown in prompt mappings, and used to select calendars in tools.
 
 ## [0.3.0] - 2026-10-26
 
 ### Changed
+
 - Rename the person and unknown-speaker configuration fields to Address as, while retaining support for existing saved settings.
 
 ## [0.2.0] - 2026-10-26
 
 ### Changed
+
 - Replace the `[title]` prompt placeholder with `[direct address]`, which also covers the first-name fallback.
 - Clarify README person-addressing fallbacks, accepted tool aliases and location reply wording.
 - Document first-name, title and third-person reference aliases in every person tool description.
@@ -67,75 +81,90 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.1.2] - 2026-10-26
 
 ### Added
+
 - Added an optional per-person third-person reference, separate from the title used for direct address.
 
 ## [0.1.1.3] - 2026-10-26
 
 ### Fixed
+
 - Keep every section of a multiline prompt inside the shaded preview box.
 
 ## [0.1.1.2] - 2026-10-26
 
 ### Fixed
+
 - Full prompt previews now sample only devices with an enabled Assist satellite entity. Prompt previews use a shaded, wrapping box instead of a horizontally scrolling code block.
 
 ## [0.1.1.1] - 2026-10-26
 
 ### Fixed
+
 - Full prompt previews now put the device example disclaimer first, followed by a `Prompt Preview:` label and a code block containing only the prompt. The person prompt preview also labels and displays its prompt in a code block.
 
 ## [0.1.1] - 2026-10-26
 
 ### Changed
+
 - The full prompt preview now identifies its Speaking Device section as an example that may use a randomly selected registered device. The disclaimer appears only when Speaking Device is configured.
 
 ## [0.1.0] - 2026-10-26
 
 ### Added
+
 - Added an integration-level full prompt preview that includes only configured API sections and works without any person subentries.
 
 ### Changed
+
 - Replaced the default refusal lines with the new set of 20 responses.
 
 ## [0.0.9] - 2026-10-26
 
 ### Documentation
+
 - Added guidance on arranging stable and per-request prompt content to improve cache reuse.
 
 ### Added
+
 - Added calendar search, availability, update and delete tools, recorded location history, and an unknown-speaker prompt preview.
 - Calendar event creation, updates and deletions now require a preview and explicit confirmation before changing a calendar.
 
 ## [0.0.8] - 2026-10-26
 
 ### Added
+
 - Speaking Person settings now include a prompt preview for each configured person.
 - Person configuration warns about stale entity IDs and entities assigned to multiple people, and requires acknowledgement before saving those assignments.
 
 ## [0.0.7] - 2026-10-26
 
 ### Added
+
 - The SPEAKING DEVICE section now includes the device's area, so "here" and "this room" resolve. For example, it says the device is in the Lounge area and that "here" means the Lounge. Left out when the device has no area.
 - `get_person_location` now says how long someone has been home or away, ready to say aloud, such as "home since three o'clock". Times are spoken without am or pm.
 
 ## [0.0.6.1] - 2026-10-26
 
 ### Fixed
+
 - Entity groups in the ENTITY MAPPINGS section are now separated by a blank line. Without it, a markdown renderer folded a group heading such as "Devices:" into the end of the previous list item.
 
 ## [0.0.6] - 2026-10-25
 
 ### Changed
+
 - When someone is away and no address is known, `get_person_location` now tells the agent to reply with exactly "Sorry [speaker's title], An exact address for [person's title] is unknown." ("for you" when asking about themselves) and nothing else. When an address is known, only the street name and town are given, never the street number, postcode or country. The wording lives in the tool, so the example prompt no longer covers it.
 
 ## [0.0.5] - 2026-10-25
 
 ### Added
+
 - `get_person_location` now includes a street address when someone is away, outside every zone, and their device tracker or the Companion App's geocoded location sensor reports one. A sensor another person has marked private is never read. When a phone has no geocoding, the result says "An exact address for [title] is unknown" and tells the agent not to guess a place.
 
 ## [0.0.4] - 2026-10-25
 
 ### Added
+
 - **Tools for recognised speakers**: `get_calendar_events`, `create_calendar_event` and `get_person_location`. They work on the entities assigned to each person, accept several people in one request (for example "Sarah's and my calendars"), and return a choice to ask the speaker when a person has more than one calendar. Creating an event is all-or-nothing. Unidentified and refused speakers get no tools.
 - **Private entities**: each person can mark some of their assigned entities as private. Only the owner can use them through the tools, other people's private entities are left out of the prompt, and the owner's own are marked `(private)`. The settings list shows the count, for example "James: Dad (3 entities, 1 private)".
 - `EXAMPLE_PROMPT.txt` now covers the tools and private entities.
@@ -144,16 +173,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.0.3] - 2026-10-25
 
 ### Added
+
 - `EXAMPLE_PROMPT.txt`, a complete example conversation agent prompt that works with the injected sections.
 - README setup step with a paragraph to add to the conversation agent's prompt, and a table summarising the sections added to the prompt.
 - Tests for both LLM APIs and for entry setup, unload, reload and removal.
 
 ### Changed
+
 - The default title for unknown speakers is now "Unknown Person" instead of "Infiltrator". Existing entries keep the title they already have.
 
 ## [0.0.2] - 2026-10-25
 
 ### Added
+
 - The list of people in the settings shows how many entities each person has, for example "James: Dad (3 entities)".
 - Only first names are ever used in the prompt, never the full account name.
 - A person's title is now optional. When it is left blank, the first name on their Home Assistant account is used.
@@ -164,11 +196,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `requirements_test.txt` for the test dependencies.
 
 ### Removed
+
 - A committed `__pycache__` file.
 
 ## [0.0.1] - 2026-10-18
 
 ### Added
+
 - **Speaking Person** LLM API. It tells the agent the speaker's title, using the Home Assistant user that Speaker Recognition sets on each request.
   - People are added as subentries under the integration, each linking a Home Assistant user to a title.
   - Unknown speakers get a configurable title (default "Infiltrator").
