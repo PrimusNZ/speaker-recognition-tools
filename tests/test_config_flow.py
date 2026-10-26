@@ -354,8 +354,8 @@ async def test_prompt_preview_descriptions_use_shaded_wrapping_boxes() -> None:
     assert translations["options"]["step"]["preview_result"]["description"] == (
         "Prompt Preview:\n\n{prompt_box}"
     )
-    assert _prompt_preview_box("first line\n<second & line>") == (
-        '<ha-alert alert-type="info">first line<br>\n'
+    assert _prompt_preview_box("first line\n\n## ENTITY MAPPINGS\n<second & line>") == (
+        '<ha-alert alert-type="info">first line<br><br>## ENTITY MAPPINGS<br>'
         "&lt;second &amp; line&gt;</ha-alert>"
     )
 

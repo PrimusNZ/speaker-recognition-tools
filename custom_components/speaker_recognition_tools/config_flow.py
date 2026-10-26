@@ -272,7 +272,7 @@ def _prompt_preview_box(prompt: str) -> str:
     """Render literal prompt text in a shaded, wrapping Home Assistant alert."""
     if not prompt:
         return ""
-    escaped_prompt = html_escape(prompt, quote=False).replace("\n", "<br>\n")
+    escaped_prompt = html_escape(prompt, quote=False).replace("\n", "<br>")
     return f'<ha-alert alert-type="info">{escaped_prompt}</ha-alert>'
 
 
