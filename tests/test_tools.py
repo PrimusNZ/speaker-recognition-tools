@@ -19,6 +19,7 @@ from custom_components.speaker_recognition_tools.tools import _since_phrase, _sp
 from custom_components.speaker_recognition_tools import tools as tools_module
 from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
+    CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_ADDRESS_AS,
@@ -92,7 +93,7 @@ def test_calendar_alias_selects_assigned_calendar():
 
     targets, problems = household.resolve_calendars([speaker], ["OFFICE DIARY"])
 
-    assert targets == [(speaker, "calendar.james_work", "James Work")]
+    assert targets == [(speaker, "calendar.james_work", "work")]
     assert not problems
 
 
@@ -117,7 +118,8 @@ def test_ambiguous_calendar_alias_returns_choices():
         "calendar.james_work",
         "calendar.james_home",
     ]
-    assert problems[0]["options"][0]["aliases"] == ["personal"]
+    assert problems[0]["options"][0]["name"] == "personal"
+    assert "aliases" not in problems[0]["options"][0]
 
 
 def test_unknown_alias_does_not_select_a_single_calendar():
@@ -603,6 +605,58 @@ async def test_create_requires_confirmation_before_writing(hass, users, calendar
     assert not error
     assert cancelled["cancelled"] is True
     assert calendars.creates == []
+
+
+async def test_calendar_confirmation_uses_first_alias_as_name(
+    hass, users, calendars
+) -> None:
+    entry = next(
+        entry
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.data[CONF_TOOL_TYPE] == TOOL_TYPE_PERSON
+    )
+    subentry = next(
+        subentry
+        for subentry in entry.subentries.values()
+        if subentry.data[CONF_USER_ID] == users["Sarah"].id
+    )
+    hass.config_entries.async_update_subentry(
+        entry,
+        subentry,
+        data={
+            **subentry.data,
+            CONF_ENTITY_ALIASES: {
+                "calendar.sarah_work": ["Personal", "Diary"]
+            },
+        },
+    )
+
+    args = {
+        "people": ["me"],
+        "calendars": ["personal"],
+        "summary": "Dentist",
+        "start": "2026-10-31T15:00:00",
+    }
+    preview, error = await call(
+        hass, users["Sarah"], "create_calendar_event", **args
+    )
+    assert not error
+    assert preview["preview"]["calendars"] == [
+        {"person": "Mum", "calendar": "Personal", "entity_id": "calendar.sarah_work"}
+    ]
+    assert calendars.creates == []
+
+    created, error = await call(
+        hass,
+        users["Sarah"],
+        "create_calendar_event",
+        **args,
+        confirmation_token=preview["confirmation_token"],
+        confirmed=True,
+    )
+    assert not error
+    assert created["created"] == [{"person": "Mum", "calendar": "Personal"}]
+    assert calendars.creates[0]["entity_id"] == "calendar.sarah_work"
 
 
 async def test_create_on_several_peoples_calendars(hass, users, calendars) -> None:

@@ -144,7 +144,11 @@ class Household:
         self, person: Person, domains: tuple[str, ...]
     ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
         """Return (assigned, usable) entities of the given domains for this speaker."""
-        assigned = [e for e in person.entities if e[0].split(".", 1)[0] in domains]
+        assigned = [
+            (entity_id, person.entity_label(entity_id, label))
+            for entity_id, label in person.entities
+            if entity_id.split(".", 1)[0] in domains
+        ]
         owner = person.user_id == self.speaker.user_id
         usable = [e for e in assigned if owner or e[0] not in person.private]
         return assigned, usable
@@ -235,8 +239,8 @@ class Household:
                                     "entity_id": e[0],
                                     "name": e[1],
                                     **(
-                                        {"aliases": list(person.aliases_for(e[0]))}
-                                        if person.aliases_for(e[0])
+                                        {"aliases": list(person.aliases_for(e[0])[1:])}
+                                        if len(person.aliases_for(e[0])) > 1
                                         else {}
                                     ),
                                 }

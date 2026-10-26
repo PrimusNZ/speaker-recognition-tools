@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Use the first entity alias as the entity's preferred name in prompts and tool results.
+
 ## [0.4.0] - 2026-10-26
 
 ### Added

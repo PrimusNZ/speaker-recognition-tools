@@ -215,8 +215,9 @@ def test_entity_aliases_are_shown_with_their_assigned_entity(prompt):
         entity_aliases=(("calendar.james", ("work calendar", "appointments")),),
     )
     text = person(prompt, user_id="u1", user_name="James", people=[james])
-    assert "calendar.james | James Calendar (aliases: work calendar, appointments)" in text
-    assert "Alternate names shown beside an entity identify that same entity." in text
+    assert "calendar.james | work calendar (other aliases: appointments)" in text
+    assert "The first alias shown for an entity is its preferred name" in text
+    assert "James Calendar" not in text
     assert "pass its exact entity_id or a configured alias" in text
 
 
@@ -235,7 +236,8 @@ def test_private_entity_aliases_are_hidden_from_other_people(prompt):
     assert "calendar.sarah_private" not in other_view
 
     owner_view = person(prompt, user_id="u2", user_name="Sarah", people=[james, sarah])
-    assert "calendar.sarah_private | Sarah diary (aliases: secret diary) (private)" in owner_view
+    assert "calendar.sarah_private | secret diary (private)" in owner_view
+    assert "Sarah diary" not in owner_view
 
 
 def test_groups_and_order(prompt):

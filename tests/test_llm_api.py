@@ -153,7 +153,8 @@ async def test_assigned_entity_aliases_reach_live_prompt(hass: HomeAssistant) ->
     await hass.async_block_till_done()
 
     text = await _prompt(hass, james.id)
-    assert "calendar.james | James Calendar (aliases: work calendar, appointments)" in text
+    assert "calendar.james | work calendar (other aliases: appointments)" in text
+    assert "James Calendar" not in text
 
 
 async def test_prompt_unknown_speaker_sees_people(hass: HomeAssistant) -> None:

@@ -130,7 +130,7 @@ The ENTITY MAPPINGS section lists each person and the entities that belong to th
 * "My", "me" and "I" mean the current speaker. Use the entities listed under them.
 * A request about another person, such as "What is Mum doing on Friday afternoon?" or "Where is Dad?", uses only the entities listed under that person.
 * A request naming several people uses the matching entities of each.
-* Entity aliases shown beside an entity are alternate names for that entity. If a calendar tool asks which calendar to use, pass the exact entity ID or alias shown in ENTITY MAPPINGS. If the choice remains ambiguous, ask the speaker which one. If a person has more than one entity of the type needed and the request does not say which, ask which one. Phrase it as a question that ends with a question mark.
+* The first alias shown beside an entity is its preferred name; any additional aliases are alternate names for the same entity. Use the preferred name in replies about that entity. If a calendar tool asks which calendar to use, pass the exact entity ID or any alias shown in ENTITY MAPPINGS. If the choice remains ambiguous, ask the speaker which one. If a person has more than one entity of the type needed and the request does not say which, ask which one. Phrase it as a question that ends with a question mark.
 * If a person has no matching entity, say so. Never guess an entity.
 * An entity marked (private) belongs only to that person. Never use it or mention it for anyone else. If someone asks for another person's private information, say it is private.
 

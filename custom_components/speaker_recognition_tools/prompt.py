@@ -45,6 +45,11 @@ class Person(NamedTuple):
             (),
         )
 
+    def entity_label(self, entity_id: str, fallback: str) -> str:
+        """Use the first alias as the preferred display name when configured."""
+        aliases = self.aliases_for(entity_id)
+        return aliases[0] if aliases else fallback
+
 
 _GROUPS = (
     ("Calendars", {"calendar"}),
@@ -72,10 +77,10 @@ def _line(
     private: bool = False,
     aliases: tuple[str, ...] = (),
 ) -> str:
-    label = " ".join(label.split())
+    label = " ".join((aliases[0] if aliases else label).split())
     text = f" - {entity_id} | {label}" if label and label != entity_id else f" - {entity_id}"
-    if aliases:
-        text += f" (aliases: {', '.join(aliases)})"
+    if len(aliases) > 1:
+        text += f" (other aliases: {', '.join(aliases[1:])})"
     return f"{text} (private)" if private else text
 
 
@@ -146,9 +151,10 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
     intro += f' "my", "me" or "I" means {me.direct_address}, the current speaker.'
     if any(p.entities for p in people):
         intro += (
-        " Alternate names shown beside an entity identify that same entity. "
-        "When a tool asks which entity to use, pass its exact entity_id or a "
-        "configured alias. For a request about a person, use only the entities "
+        "The first alias shown for an entity is its preferred name; any other "
+        "aliases shown for it are alternate names for that same entity. When a "
+        "tool asks which entity to use, pass its exact entity_id or a configured "
+        "alias. For a request about a person, use only the entities "
         "listed under "
             "that person. A request naming two or more people who each have a "
             "matching type of entity (such as a calendar) uses the matching "
