@@ -160,13 +160,19 @@ class Household:
         self, people: list[Person], chosen: list[str] | None
     ) -> tuple[list[tuple[Person, str, str]], list[dict[str, Any]]]:
         """Pick the calendar(s) to use for each person, or say what is in the way."""
-        chosen = [str(c) for c in chosen or []]
+        chosen = [str(c).strip() for c in chosen or []]
         targets: list[tuple[Person, str, str]] = []
         problems: list[dict[str, Any]] = []
         seen: set[str] = set()
         for person in people:
+            _, usable = self.entities(person, CALENDAR_DOMAINS)
+            for entity_id, _ in usable:
+                seen.add(entity_id.casefold())
+                seen.update(alias.casefold() for alias in person.aliases_for(entity_id))
+        all_choices_are_known = all(value.casefold() in seen for value in chosen)
+
+        for person in people:
             assigned, usable = self.entities(person, CALENDAR_DOMAINS)
-            seen.update(e[0] for e in usable)
             if not assigned:
                 problems.append(
                     {
@@ -184,9 +190,34 @@ class Household:
                     }
                 )
             else:
-                picked = [e for e in usable if e[0] in chosen]
-                if not picked and len(usable) == 1:
-                    picked = usable
+                picked_ids: set[str] = set()
+                ambiguous_alias = False
+                for requested in chosen:
+                    key = requested.casefold()
+                    id_matches = {e[0] for e in usable if e[0].casefold() == key}
+                    if id_matches:
+                        picked_ids.update(id_matches)
+                        continue
+                    alias_matches = {
+                        entity_id
+                        for entity_id, _ in usable
+                        if any(
+                            alias.casefold() == key
+                            for alias in person.aliases_for(entity_id)
+                        )
+                    }
+                    if len(alias_matches) > 1:
+                        ambiguous_alias = True
+                    else:
+                        picked_ids.update(alias_matches)
+                picked = [e for e in usable if e[0] in picked_ids]
+                if ambiguous_alias:
+                    picked = []
+                if not picked and len(usable) == 1 and not ambiguous_alias:
+                    if all_choices_are_known:
+                        picked = usable
+                    else:
+                        continue
                 if picked:
                     targets.extend((person, e[0], e[1]) for e in picked)
                 else:
@@ -197,15 +228,24 @@ class Household:
                             "message": (
                                 f"{self.reference(person)} has more than one calendar. Ask "
                                 "the speaker which one, then call again with the "
-                                "chosen entity_id in calendars."
+                                "chosen entity_id or configured entity alias in calendars."
                             ),
                             "options": [
-                                {"entity_id": e[0], "name": e[1]} for e in usable
+                                {
+                                    "entity_id": e[0],
+                                    "name": e[1],
+                                    **(
+                                        {"aliases": list(person.aliases_for(e[0]))}
+                                        if person.aliases_for(e[0])
+                                        else {}
+                                    ),
+                                }
+                                for e in usable
                             ],
                         }
                     )
         for entity_id in chosen:
-            if entity_id not in seen:
+            if entity_id.casefold() not in seen:
                 problems.append(
                     {
                         "problem": "calendar_not_available",
@@ -473,7 +513,8 @@ class GetCalendarEventsTool(_PersonTool):
         "start and end are ISO 8601 local dates or date times; a date-only end "
         "includes that whole day. Private calendars can only be read by their "
         "owner. If a person has more than one calendar the result asks for a "
-        "choice; ask the speaker, then call again with the chosen entity_id in "
+        "choice; ask the speaker, then call again with the chosen entity_id or "
+        "configured entity alias in "
         "calendars."
     )
     annotations = _READ_ONLY or llm.Tool.annotations
@@ -551,8 +592,10 @@ class SearchCalendarEventsTool(_PersonTool):
         "Find events whose title contains query on one or more people's assigned "
         "calendars in a date range. "
         f"{_people_parameter_guidance('Omit people to use the current speaker.')} "
-        "Results include uid and recurrence_id for event "
-        "updates or deletion. A private calendar can only be read by its owner."
+        "If a calendar choice is needed, calendars accepts an exact entity_id or "
+        "an alias shown for that calendar in ENTITY MAPPINGS. Results include uid "
+        "and recurrence_id for event updates or deletion. A private calendar can "
+        "only be read by its owner."
     )
     annotations = _READ_ONLY or llm.Tool.annotations
     parameters = vol.Schema(
@@ -617,7 +660,9 @@ class CheckCalendarAvailabilityTool(_PersonTool):
         "Check whether a time window is free on one or more people's calendars. "
         f"{_people_parameter_guidance('Omit people to use the current speaker.')} "
         "start and end are ISO 8601 local dates or date times; a date-only end "
-        "includes the whole day. Private calendars can only be checked by their owner."
+        "includes the whole day. If a calendar choice is needed, calendars accepts "
+        "an exact entity_id or an alias shown for that calendar in ENTITY MAPPINGS. "
+        "Private calendars can only be checked by their owner."
     )
     annotations = _READ_ONLY or llm.Tool.annotations
     parameters = vol.Schema(
@@ -890,7 +935,7 @@ class CreateCalendarEventTool(_PersonTool):
         "unless every named person's calendar can be used: a private calendar "
         "can only be written by its owner, and a person with more than one "
         "calendar needs the speaker to choose; ask, then call again with the "
-        "chosen entity_id in calendars."
+        "chosen entity_id or configured entity alias in calendars."
     )
     annotations = _WRITE or llm.Tool.annotations
     parameters = vol.Schema(

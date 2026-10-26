@@ -22,6 +22,7 @@ class Person(NamedTuple):
     entities: tuple[tuple[str, str], ...] = ()  # (entity_id, label)
     private: frozenset[str] = frozenset()  # entity ids only this person may use
     third_person_reference: str | None = None
+    entity_aliases: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     @property
     def direct_address(self) -> str:
@@ -32,6 +33,17 @@ class Person(NamedTuple):
     def third_person_form(self) -> str:
         """How to refer to this person when speaking about them."""
         return self.third_person_reference or self.direct_address
+
+    def aliases_for(self, entity_id: str) -> tuple[str, ...]:
+        """Return the alternate names configured for an assigned entity."""
+        return next(
+            (
+                aliases
+                for assigned_id, aliases in self.entity_aliases
+                if assigned_id == entity_id
+            ),
+            (),
+        )
 
 
 _GROUPS = (
@@ -54,9 +66,16 @@ def _group(entity_id: str) -> str:
     return next((name for name, domains in _GROUPS if domain in domains), "Other")
 
 
-def _line(entity_id: str, label: str, private: bool = False) -> str:
+def _line(
+    entity_id: str,
+    label: str,
+    private: bool = False,
+    aliases: tuple[str, ...] = (),
+) -> str:
     label = " ".join(label.split())
     text = f" - {entity_id} | {label}" if label and label != entity_id else f" - {entity_id}"
+    if aliases:
+        text += f" (aliases: {', '.join(aliases)})"
     return f"{text} (private)" if private else text
 
 
@@ -76,7 +95,14 @@ def _person_block(person: Person, current: bool) -> str:
         members = [e for e in visible if _group(e[0]) == group]
         if members:
             lines = [f"{group}:"]
-            lines.extend(_line(*e, e[0] in person.private) for e in members)
+            lines.extend(
+                _line(
+                    *e,
+                    private=e[0] in person.private,
+                    aliases=person.aliases_for(e[0]),
+                )
+                for e in members
+            )
             groups.append("\n".join(lines))
     return block_heading + "\n" + "\n\n".join(groups)
 
@@ -120,7 +146,10 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
     intro += f' "my", "me" or "I" means {me.direct_address}, the current speaker.'
     if any(p.entities for p in people):
         intro += (
-            " For a request about a person, use only the entities listed under "
+        " Alternate names shown beside an entity identify that same entity. "
+        "When a tool asks which entity to use, pass its exact entity_id or a "
+        "configured alias. For a request about a person, use only the entities "
+        "listed under "
             "that person. A request naming two or more people who each have a "
             "matching type of entity (such as a calendar) uses the matching "
             "entities of each. If a person has more than one entity of the "

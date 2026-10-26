@@ -8,6 +8,7 @@ from homeassistant.helpers import area_registry as ar, device_registry as dr, ll
 
 from .const import (
     CONF_DENY_UNKNOWN,
+    CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
@@ -65,6 +66,10 @@ class SpeakingPersonAPI(llm.API):
             address_as = sub.data.get(CONF_ADDRESS_AS, sub.data.get(CONF_LEGACY_ADDRESS_AS)) or ""
             if not name:
                 continue  # no configured address form and no account name to fall back on
+            entity_aliases = tuple(
+                (entity_id, tuple(names))
+                for entity_id, names in sub.data.get(CONF_ENTITY_ALIASES, {}).items()
+            )
             people.append(
                 Person(
                     sub.data[CONF_USER_ID],
@@ -73,6 +78,7 @@ class SpeakingPersonAPI(llm.API):
                     tuple(entities),
                     frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
                     sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
+                    entity_aliases,
                 )
             )
 

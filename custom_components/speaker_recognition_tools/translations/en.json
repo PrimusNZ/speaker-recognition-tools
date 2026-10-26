@@ -35,11 +35,13 @@
             "address_as": "Address as",
             "third_person_reference": "Third-person reference",
             "entities": "Entities",
+            "entity_aliases": "Entity aliases",
             "private_entities": "Private entities"
           },
           "data_description": {
             "address_as": "Optional. Used when speaking directly to this person; leave blank to use the first name on the account.",
             "third_person_reference": "Optional. Used in tool results and when speaking about this person rather than to them; if blank, the configured address form or first name is used (for example, The father).",
+            "entity_aliases": "Optional. Add one line per assigned entity in the format entity_id: alias, another alias. These names help the agent identify the entity and can be used to select a calendar in tools.",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App. The agent uses them for requests like \"What's on my calendar?\" or \"What is Sarah doing on Friday?\".",
             "private_entities": "Entities from the list above that only this person may use. Anyone else is refused by the calendar and location tools, and the agent is not told about them."
           },
@@ -53,11 +55,13 @@
             "address_as": "Address as",
             "third_person_reference": "Third-person reference",
             "entities": "Entities",
+            "entity_aliases": "Entity aliases",
             "private_entities": "Private entities"
           },
           "data_description": {
             "address_as": "Optional. Used when speaking directly to this person; leave blank to use the first name on the account.",
             "third_person_reference": "Optional. Used in tool results and when speaking about this person rather than to them; if blank, the configured address form or first name is used (for example, The father).",
+            "entity_aliases": "Optional. Add one line per assigned entity in the format entity_id: alias, another alias. These names help the agent identify the entity and can be used to select a calendar in tools.",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App.",
             "private_entities": "Entities from the list above that only this person may use."
           },
@@ -69,6 +73,7 @@
       "error": {
         "already_configured": "That account has already been added.",
         "private_not_assigned": "Every private entity must also be in the Entities list.",
+        "invalid_entity_aliases": "Each alias line must use entity_id: alias, and the entity must be assigned to this person.",
         "base": {
           "entity_warnings_acknowledge": "Review the entity warnings below and submit again to keep these assignments."
         }

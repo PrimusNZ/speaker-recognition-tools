@@ -26,6 +26,7 @@ from homeassistant.helpers import (
 
 from .const import (
     CONF_DENY_UNKNOWN,
+    CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
@@ -359,10 +360,15 @@ async def _configured_people(hass, entry) -> list[Person]:
             (entity_id, hass.states.get(entity_id).name if hass.states.get(entity_id) else entity_id)
             for entity_id in sub.data.get(CONF_ENTITIES, [])
         )
+        entity_aliases = tuple(
+            (entity_id, tuple(names))
+            for entity_id, names in sub.data.get(CONF_ENTITY_ALIASES, {}).items()
+        )
         people.append(Person(
             sub.data[CONF_USER_ID], name, address_as, entities,
             frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
             sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
+            entity_aliases,
         ))
     return people
 
@@ -371,6 +377,40 @@ def _private_is_assigned(user_input: dict[str, Any]) -> bool:
     """Private entities must also be in the person's entity list."""
     return set(user_input.get(CONF_PRIVATE_ENTITIES, [])) <= set(
         user_input.get(CONF_ENTITIES, [])
+    )
+
+
+def _parse_entity_aliases(
+    text: str, assigned_entities: list[str]
+) -> dict[str, list[str]] | None:
+    """Parse one entity-id-to-alias-list mapping per line; None means invalid input."""
+    assigned = set(assigned_entities)
+    result: dict[str, list[str]] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if ":" not in line:
+            return None
+        entity_id, raw_aliases = (part.strip() for part in line.split(":", 1))
+        aliases = list(dict.fromkeys(alias.strip() for alias in raw_aliases.split(",")))
+        if (
+            not entity_id
+            or entity_id not in assigned
+            or not aliases
+            or any(not alias for alias in aliases)
+        ):
+            return None
+        result[entity_id] = aliases
+    return result
+
+
+def _entity_aliases_text(aliases: dict[str, list[str]] | None) -> str:
+    """Format saved aliases for the multiline config-flow field."""
+    return "\n".join(
+        f"{entity_id}: {', '.join(names)}"
+        for entity_id, names in (aliases or {}).items()
+        if names
     )
 
 
@@ -409,7 +449,13 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 for sub in entry.subentries.values()
                 if sub.subentry_type == SUBENTRY_SPEAKER
             }
-            if user_input[CONF_USER_ID] in taken:
+            aliases = _parse_entity_aliases(
+                user_input.get(CONF_ENTITY_ALIASES, ""),
+                user_input.get(CONF_ENTITIES, []),
+            )
+            if aliases is None:
+                errors[CONF_ENTITY_ALIASES] = "invalid_entity_aliases"
+            elif user_input[CONF_USER_ID] in taken:
                 errors[CONF_USER_ID] = "already_configured"
             elif not _private_is_assigned(user_input):
                 errors[CONF_PRIVATE_ENTITIES] = "private_not_assigned"
@@ -438,6 +484,7 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                             CONF_ADDRESS_AS: address_as,
                             CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
                             CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
+                            **({CONF_ENTITY_ALIASES: aliases} if aliases else {}),
                             **({CONF_THIRD_PERSON_REFERENCE: user_input[CONF_THIRD_PERSON_REFERENCE].strip()}
                                if user_input.get(CONF_THIRD_PERSON_REFERENCE, "").strip() else {}),
                         },
@@ -452,6 +499,9 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 vol.Optional(CONF_THIRD_PERSON_REFERENCE): selector.TextSelector(),
                 vol.Optional(CONF_ENTITIES): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
+                ),
+                vol.Optional(CONF_ENTITY_ALIASES): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
                 ),
                 vol.Optional(CONF_PRIVATE_ENTITIES): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
@@ -470,7 +520,17 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
         subentry = self._get_reconfigure_subentry()
         errors: dict[str, str] = {}
         warnings = ""
-        if user_input is not None and not _private_is_assigned(user_input):
+        aliases = (
+            _parse_entity_aliases(
+                user_input.get(CONF_ENTITY_ALIASES, ""),
+                user_input.get(CONF_ENTITIES, []),
+            )
+            if user_input is not None
+            else {}
+        )
+        if user_input is not None and aliases is None:
+            errors[CONF_ENTITY_ALIASES] = "invalid_entity_aliases"
+        elif user_input is not None and not _private_is_assigned(user_input):
             errors[CONF_PRIVATE_ENTITIES] = "private_not_assigned"
         elif user_input is not None:
             warnings = await _entity_issues(
@@ -497,6 +557,7 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                         CONF_ADDRESS_AS: address_as,
                         CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
                         CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
+                        **({CONF_ENTITY_ALIASES: aliases} if aliases else {}),
                         **({CONF_THIRD_PERSON_REFERENCE: user_input[CONF_THIRD_PERSON_REFERENCE].strip()}
                            if user_input.get(CONF_THIRD_PERSON_REFERENCE, "").strip() else {}),
                     },
@@ -524,6 +585,14 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                     default=subentry.data.get(CONF_PRIVATE_ENTITIES, []),
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
+                ),
+                vol.Optional(
+                    CONF_ENTITY_ALIASES,
+                    default=_entity_aliases_text(
+                        subentry.data.get(CONF_ENTITY_ALIASES)
+                    ),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
                 ),
             }
         )

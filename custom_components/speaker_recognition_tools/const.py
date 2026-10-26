@@ -17,6 +17,7 @@ CONF_ADDRESS_AS = "address_as"  # Optional direct-address form shown as "Address
 CONF_LEGACY_ADDRESS_AS = "title"  # Read existing entries created before the field was renamed.
 CONF_THIRD_PERSON_REFERENCE = "third_person_reference"
 CONF_ENTITIES = "entities"  # optional list of entity ids
+CONF_ENTITY_ALIASES = "entity_aliases"  # entity id to alternate names
 CONF_PRIVATE_ENTITIES = "private_entities"  # subset of entities only the owner may use
 CONF_UNKNOWN_ADDRESS_AS = "unknown_address_as"
 CONF_LEGACY_UNKNOWN_ADDRESS_AS = "unknown_title"  # Read existing options saved before the field was renamed.

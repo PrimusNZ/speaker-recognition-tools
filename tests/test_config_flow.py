@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.speaker_recognition_tools.config_flow import _prompt_preview_box
 from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
+    CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
@@ -212,7 +213,7 @@ async def _user(hass: HomeAssistant, name: str):
     return await hass.auth.async_create_user(name, group_ids=["system-users"])
 
 
-async def _add_person(hass, entry, user_id, address_as=None, entities=None, private=None, third_person_reference=None):
+async def _add_person(hass, entry, user_id, address_as=None, entities=None, private=None, third_person_reference=None, entity_aliases=None):
     result = await hass.config_entries.subentries.async_init(
         (entry.entry_id, SUBENTRY_SPEAKER), context={"source": "user"}
     )
@@ -223,6 +224,7 @@ async def _add_person(hass, entry, user_id, address_as=None, entities=None, priv
         | ({CONF_ADDRESS_AS: address_as} if address_as is not None else {})
         | ({CONF_ENTITIES: entities} if entities else {})
         | ({CONF_PRIVATE_ENTITIES: private} if private else {})
+        | ({CONF_ENTITY_ALIASES: entity_aliases} if entity_aliases is not None else {})
         | ({CONF_THIRD_PERSON_REFERENCE: third_person_reference} if third_person_reference else {}),
     )
     if result.get("errors", {}).get("base") == "entity_warnings_acknowledge":
@@ -232,6 +234,7 @@ async def _add_person(hass, entry, user_id, address_as=None, entities=None, priv
             | ({CONF_ADDRESS_AS: address_as} if address_as is not None else {})
             | ({CONF_ENTITIES: entities} if entities else {})
             | ({CONF_PRIVATE_ENTITIES: private} if private else {})
+            | ({CONF_ENTITY_ALIASES: entity_aliases} if entity_aliases is not None else {})
             | ({CONF_THIRD_PERSON_REFERENCE: third_person_reference} if third_person_reference else {}),
         )
     return result
@@ -280,6 +283,62 @@ async def test_add_person_with_entities(hass: HomeAssistant) -> None:
     sub = next(iter(entry.subentries.values()))
     assert sub.data[CONF_ENTITIES] == entities
     assert result["title"] == "James: Dad (2 entities)"
+
+
+async def test_add_person_with_entity_aliases(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    result = await _add_person(
+        hass,
+        entry,
+        user.id,
+        "Dad",
+        ["calendar.james"],
+        entity_aliases="calendar.james: work, appointments",
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    sub = next(iter(entry.subentries.values()))
+    assert sub.data[CONF_ENTITY_ALIASES] == {
+        "calendar.james": ["work", "appointments"]
+    }
+
+
+async def test_entity_aliases_must_reference_an_assigned_entity(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_SPEAKER), context={"source": "user"}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"],
+        {
+            CONF_USER_ID: user.id,
+            CONF_ENTITIES: ["calendar.james"],
+            CONF_ENTITY_ALIASES: "calendar.work: work",
+        },
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_ENTITY_ALIASES] == "invalid_entity_aliases"
+
+
+async def test_reconfigure_person_entity_aliases(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad", ["calendar.james"])
+    sub_id = next(iter(entry.subentries))
+    result = await _reconfigure(
+        hass,
+        entry,
+        sub_id,
+        {
+            CONF_ENTITIES: ["calendar.james"],
+            CONF_ENTITY_ALIASES: "calendar.james: work",
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert entry.subentries[sub_id].data[CONF_ENTITY_ALIASES] == {
+        "calendar.james": ["work"]
+    }
 
 
 async def test_list_label_counts_one_entity(hass: HomeAssistant) -> None:
@@ -357,8 +416,11 @@ async def test_prompt_preview_descriptions_use_shaded_wrapping_boxes() -> None:
     )
     translations = json.loads(translation_path.read_text())
     person_fields = translations["config_subentries"]["speaker"]["step"]["user"]["data"]
+    person_descriptions = translations["config_subentries"]["speaker"]["step"]["user"]["data_description"]
     unknown_settings = translations["options"]["step"]["settings"]["data"]
     assert person_fields[CONF_ADDRESS_AS] == "Address as"
+    assert person_fields[CONF_ENTITY_ALIASES] == "Entity aliases"
+    assert "one line per assigned entity" in person_descriptions[CONF_ENTITY_ALIASES]
     assert CONF_LEGACY_ADDRESS_AS not in person_fields
     assert unknown_settings[CONF_UNKNOWN_ADDRESS_AS] == "Address as for unknown speakers"
     assert CONF_LEGACY_UNKNOWN_ADDRESS_AS not in unknown_settings

@@ -206,6 +206,38 @@ def test_person_blocks_with_grouped_entities(prompt):
     ) in text
 
 
+def test_entity_aliases_are_shown_with_their_assigned_entity(prompt):
+    james = prompt.Person(
+        "u1",
+        "James",
+        "Dad",
+        (("calendar.james", "James Calendar"),),
+        entity_aliases=(("calendar.james", ("work calendar", "appointments")),),
+    )
+    text = person(prompt, user_id="u1", user_name="James", people=[james])
+    assert "calendar.james | James Calendar (aliases: work calendar, appointments)" in text
+    assert "Alternate names shown beside an entity identify that same entity." in text
+    assert "pass its exact entity_id or a configured alias" in text
+
+
+def test_private_entity_aliases_are_hidden_from_other_people(prompt):
+    james = prompt.Person("u1", "James", "Dad")
+    sarah = prompt.Person(
+        "u2",
+        "Sarah",
+        "Mum",
+        (("calendar.sarah_private", "Sarah diary"),),
+        frozenset({"calendar.sarah_private"}),
+        entity_aliases=(("calendar.sarah_private", ("secret diary",)),),
+    )
+    other_view = person(prompt, user_id="u1", user_name="James", people=[james, sarah])
+    assert "secret diary" not in other_view
+    assert "calendar.sarah_private" not in other_view
+
+    owner_view = person(prompt, user_id="u2", user_name="Sarah", people=[james, sarah])
+    assert "calendar.sarah_private | Sarah diary (aliases: secret diary) (private)" in owner_view
+
+
 def test_groups_and_order(prompt):
     ents = (
         ("light.lamp", "Lamp"),

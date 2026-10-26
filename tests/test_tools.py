@@ -77,6 +77,84 @@ def test_household_uses_third_person_reference_for_other_people():
     assert household.reference(untitled) == "Tom"
 
 
+def test_calendar_alias_selects_assigned_calendar():
+    speaker = Person(
+        "u1",
+        "James",
+        "Dad",
+        (("calendar.james_work", "James Work"), ("calendar.james_home", "James Home")),
+        entity_aliases=(
+            ("calendar.james_work", ("work", "office diary")),
+            ("calendar.james_home", ("home",)),
+        ),
+    )
+    household = tools_module.Household([speaker], speaker)
+
+    targets, problems = household.resolve_calendars([speaker], ["OFFICE DIARY"])
+
+    assert targets == [(speaker, "calendar.james_work", "James Work")]
+    assert not problems
+
+
+def test_ambiguous_calendar_alias_returns_choices():
+    speaker = Person(
+        "u1",
+        "James",
+        "Dad",
+        (("calendar.james_work", "James Work"), ("calendar.james_home", "James Home")),
+        entity_aliases=(
+            ("calendar.james_work", ("personal",)),
+            ("calendar.james_home", ("personal",)),
+        ),
+    )
+    household = tools_module.Household([speaker], speaker)
+
+    targets, problems = household.resolve_calendars([speaker], ["personal"])
+
+    assert not targets
+    assert [p["problem"] for p in problems] == ["choose_calendar"]
+    assert [o["entity_id"] for o in problems[0]["options"]] == [
+        "calendar.james_work",
+        "calendar.james_home",
+    ]
+    assert problems[0]["options"][0]["aliases"] == ["personal"]
+
+
+def test_unknown_alias_does_not_select_a_single_calendar():
+    speaker = Person(
+        "u1",
+        "James",
+        "Dad",
+        (("calendar.james_work", "James Work"),),
+        entity_aliases=(("calendar.james_work", ("work",)),),
+    )
+    household = tools_module.Household([speaker], speaker)
+
+    targets, problems = household.resolve_calendars([speaker], ["office"])
+
+    assert not targets
+    assert [p["problem"] for p in problems] == ["calendar_not_available"]
+
+
+def test_other_person_cannot_select_private_calendar_by_alias():
+    speaker = Person("u1", "James", "Dad")
+    target = Person(
+        "u2",
+        "Sarah",
+        "Mum",
+        (("calendar.sarah_private", "Sarah Diary"),),
+        frozenset({"calendar.sarah_private"}),
+        entity_aliases=(("calendar.sarah_private", ("private diary",)),),
+    )
+    household = tools_module.Household([speaker, target], speaker)
+
+    targets, problems = household.resolve_calendars([target], ["private diary"])
+
+    assert not targets
+    assert "private" in [p["problem"] for p in problems]
+    assert "calendar_not_available" in [p["problem"] for p in problems]
+
+
 class Calendars:
     """Fake calendar services that record every call."""
 

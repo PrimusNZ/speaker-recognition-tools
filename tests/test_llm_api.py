@@ -6,6 +6,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
+    CONF_ENTITY_ALIASES,
     CONF_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_ADDRESS_AS,
@@ -122,6 +123,37 @@ async def test_pre_address_as_settings_remain_supported(hass: HomeAssistant) -> 
 
     assert "Address them as Dad." in await _prompt(hass, james.id)
     assert "Address them as Guest." in await _prompt(hass, None)
+
+
+async def test_assigned_entity_aliases_reach_live_prompt(hass: HomeAssistant) -> None:
+    james = await hass.auth.async_create_user("James", group_ids=["system-users"])
+    hass.states.async_set("calendar.james", "off", {"friendly_name": "James Calendar"})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
+        options={CONF_DENY_UNKNOWN: False},
+        subentries_data=[
+            ConfigSubentryData(
+                subentry_type=SUBENTRY_SPEAKER,
+                title="James",
+                unique_id=james.id,
+                data={
+                    CONF_USER_ID: james.id,
+                    CONF_ADDRESS_AS: "Dad",
+                    CONF_ENTITIES: ["calendar.james"],
+                    CONF_ENTITY_ALIASES: {
+                        "calendar.james": ["work calendar", "appointments"]
+                    },
+                },
+            )
+        ],
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    text = await _prompt(hass, james.id)
+    assert "calendar.james | James Calendar (aliases: work calendar, appointments)" in text
 
 
 async def test_prompt_unknown_speaker_sees_people(hass: HomeAssistant) -> None:
