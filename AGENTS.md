@@ -39,7 +39,7 @@ After changes, run `.venv/bin/ruff check .` and `npm run format:check`. If Prett
 - Source that private configuration before mounting or using SSH. Mount the configured integration directory, then edit files through the mount. Changes there write directly to the installed files.
 - Changes written through the mount update the installed files directly. Keep the repository source in sync with changes made through the mount, and keep tests, changelog, and documentation in this repository.
 - Before replacing an installed file outside the mount, preserve its current copy in the configured remote backup directory. The mount is the normal path for direct development edits.
-- After every change to the installed integration files, run the Home Assistant configuration check, perform a full Home Assistant restart, allow about five minutes for startup, and then verify the integration loaded. Config-entry reloads do not reliably apply these changes; do not use them as a substitute for restarting.
+- After every change to the installed integration files, run the Home Assistant configuration check, perform a full Home Assistant restart, allow about three minutes for startup, and then verify the integration loaded. Config-entry reloads do not reliably apply these changes; do not use them as a substitute for restarting.
 - Do not publish a development change to GitHub until the user confirms testing is complete and explicitly requests the relevant commit, push, version bump, or release. Each action still requires an explicit request.
 
 ## Conventions
