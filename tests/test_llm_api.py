@@ -144,7 +144,7 @@ async def test_linked_device_is_injected_with_shared_status_and_action_name(
     )
 
 
-async def test_pre_address_as_settings_remain_supported(hass: HomeAssistant) -> None:
+async def test_legacy_address_as_settings_remain_supported(hass: HomeAssistant) -> None:
     james = await hass.auth.async_create_user("James", group_ids=["system-users"])
     entry = MockConfigEntry(
         domain=DOMAIN,

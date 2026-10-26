@@ -3,19 +3,15 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.6.0] - 2026-10-26
+## [0.6.0.5] - 2026-10-27
 
-### Added
+### Fixed
 
-- Add tools to read assigned entity states and call Home Assistant services on assigned entities, with per-person privacy checks.
+- Render prompt previews as Markdown directly, removing the nonfunctional alert wrapper and separating the prompt from disclaimers with horizontal rules.
 
-## [0.6.0.1] - 2026-10-26
+### Developer
 
-### Added
-
-- Add linked devices that map one spoken name to separate status and action entities.
-
-## [Unreleased]
+- Document test naming, changelog ordering, and SSHFS-based Home Assistant development and restart procedures in `AGENTS.md`.
 
 ## [0.6.0.4] - 2026-10-26
 
@@ -45,6 +41,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Documentation
 
 - Use synthetic location examples in the README and tests.
+
+## [0.6.0.1] - 2026-10-26
+
+### Added
+
+- Add linked devices that map one spoken name to separate status and action entities.
+
+## [0.6.0] - 2026-10-26
+
+### Added
+
+- Add tools to read assigned entity states and call Home Assistant services on assigned entities, with per-person privacy checks.
 
 ## [0.5.0.2] - 2026-10-26
 

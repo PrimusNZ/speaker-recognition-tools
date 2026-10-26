@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import random
-from html import escape as html_escape
 from typing import Any
 
 import voluptuous as vol
@@ -85,7 +84,6 @@ class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "disclaimer": disclaimer,
                 "prompt": prompt,
-                "prompt_box": _prompt_preview_box(prompt),
                 "note": note,
             },
         )
@@ -212,7 +210,6 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                 data_schema=vol.Schema({}),
                 description_placeholders={
                     "prompt": prompt,
-                    "prompt_box": _prompt_preview_box(prompt),
                 },
             )
         people = await _configured_people(self.hass, self.config_entry)
@@ -326,17 +323,6 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
         "preview excludes the agent's own prompt and Home Assistant's API wrapper text."
     )
     return "\n\n".join(sections), disclaimer, " ".join(notes)
-
-
-def _prompt_preview_box(prompt: str) -> str:
-    """Render prompt Markdown inside a shaded, wrapping Home Assistant alert."""
-    if not prompt:
-        return ""
-    escaped_prompt = html_escape(prompt, quote=True).replace("\n", "&#10;")
-    return (
-        '<ha-alert alert-type="info"><ha-markdown content="'
-        f'{escaped_prompt}"></ha-markdown></ha-alert>'
-    )
 
 
 async def _preview_account(hass, context):
@@ -927,7 +913,6 @@ class FullPromptPreviewSubentryFlow(ConfigSubentryFlow):
             description_placeholders={
                 "disclaimer": disclaimer,
                 "prompt": prompt,
-                "prompt_box": _prompt_preview_box(prompt),
                 "note": note,
             },
         )

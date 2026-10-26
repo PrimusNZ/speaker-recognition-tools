@@ -285,7 +285,15 @@ def test_linked_device_without_aliases_has_no_alias_line(prompt):
         "u1",
         "James",
         "Dad",
-        entity_links=(("Demo unit", "binary_sensor.demo_unit_status", "button.demo_unit_action", False, ()),),
+        entity_links=(
+            (
+                "Demo unit",
+                "binary_sensor.demo_unit_status",
+                "button.demo_unit_action",
+                False,
+                (),
+            ),
+        ),
     )
     text = person(prompt, user_id="u1", user_name="James", people=[james])
     assert (
@@ -340,7 +348,7 @@ def test_private_entity_aliases_are_hidden_from_other_people(prompt):
     assert "Sarah diary" not in owner_view
 
 
-def test_groups_and_order(prompt):
+def test_entity_groups_follow_calendar_device_other_order(prompt):
     ents = (
         ("light.lamp", "Lamp"),
         ("sensor.car_fuel", "Car Fuel"),
@@ -386,11 +394,11 @@ def test_unknown_speaker_address_forms_sorted_alphabetically(prompt):
     assert " - adam (Uncle)\n - Gran\n - Zoe (Aunt)" in text
 
 
-def test_unknown_speaker_no_people_configured_adds_nothing(prompt):
+def test_unknown_speaker_prompt_omits_people_section_when_none_configured(prompt):
     assert "PEOPLE" not in person(prompt, people=[])
 
 
-def test_people_are_alphabetical_with_current_speaker_in_place(prompt):
+def test_people_remain_alphabetical_when_current_speaker_is_present(prompt):
     ps = [
         P(prompt, "a", "Zoe", "Aunt"),
         P(prompt, "b", "Adam", "Uncle"),
@@ -405,7 +413,7 @@ def test_people_are_alphabetical_with_current_speaker_in_place(prompt):
     assert order == sorted(order)
 
 
-def test_person_without_name_headed_by_address_as(prompt):
+def test_person_without_name_uses_address_as_heading(prompt):
     text = person(
         prompt,
         user_id="u1",
@@ -415,7 +423,7 @@ def test_person_without_name_headed_by_address_as(prompt):
     assert "### Mum\n(no entities)" in text
 
 
-def test_no_other_people_adds_nothing(prompt):
+def test_person_prompt_omits_entity_mappings_when_no_other_people(prompt):
     text = person(prompt, user_id="u1", user_name="James", people=people(prompt)[:1])
     assert "ENTITY MAPPINGS" not in text
     assert "ENTITY MAPPINGS" not in person(prompt)
@@ -453,7 +461,7 @@ def test_denied_speaker_reveals_no_people(prompt):
     assert "James" not in text and "Sarah" not in text
 
 
-def test_title_same_as_name_is_not_repeated(prompt):
+def test_address_as_same_as_name_is_not_repeated(prompt):
     ps = [P(prompt, "u1", "Tom", "Tom"), P(prompt, "u2", "Ann", "Aunt")]
     text = person(
         prompt, user_id="u1", user_name="Tom", people=ps, speakers={"u1": "Tom"}
@@ -563,7 +571,7 @@ def test_device_area_makes_here_and_this_room_resolve(prompt):
     )
 
 
-def test_device_without_area_says_nothing_about_it(prompt):
+def test_device_prompt_omits_unknown_area(prompt):
     text = prompt.build_device_prompt(device_id="abc123", device_name="Kitchen")
     assert "area" not in text
     text = prompt.build_device_prompt(

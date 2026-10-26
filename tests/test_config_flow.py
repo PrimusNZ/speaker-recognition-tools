@@ -17,7 +17,6 @@ from homeassistant.helpers import (
 )
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.speaker_recognition_tools.config_flow import _prompt_preview_box
 from custom_components.speaker_recognition_tools.const import (
     CONF_ADDRESS_AS,
     CONF_DENY_UNKNOWN,
@@ -490,7 +489,7 @@ async def test_reconfigure_person_entity_aliases(hass: HomeAssistant) -> None:
     }
 
 
-async def test_list_label_counts_one_entity(hass: HomeAssistant) -> None:
+async def test_person_subentry_title_shows_entity_count(hass: HomeAssistant) -> None:
     entry = await _person_entry(hass)
     user = await _user(hass, "James")
     result = await _add_person(hass, entry, user.id, "Dad", ["calendar.james"])
@@ -577,7 +576,7 @@ async def test_preview_shows_generated_person_prompt(hass: HomeAssistant) -> Non
     assert "Address them as Dad." in result["description_placeholders"]["prompt"]
 
 
-async def test_prompt_preview_descriptions_render_markdown_in_shaded_boxes() -> None:
+async def test_prompt_preview_translations_use_markdown_and_horizontal_rules() -> None:
     translation_path = (
         Path(__file__).parent.parent
         / "custom_components/speaker_recognition_tools/translations/en.json"
@@ -596,26 +595,24 @@ async def test_prompt_preview_descriptions_render_markdown_in_shaded_boxes() -> 
         unknown_settings[CONF_UNKNOWN_ADDRESS_AS] == "Address as for unknown speakers"
     )
     assert CONF_LEGACY_UNKNOWN_ADDRESS_AS not in unknown_settings
-    preview_template = "{disclaimer}\n\nPrompt Preview:\n\n{prompt_box}\n\n{note}"
-    assert (
-        translations["config"]["step"]["preview_full_result"]["description"]
-        == preview_template
+    assert translations["config"]["step"]["preview_full_result"]["description"] == (
+        "{disclaimer}\n\n---\n\n{prompt}\n\n---\n\n{note}"
     )
     assert (
         translations["config_subentries"]["full_prompt_preview"]["step"]["user"][
             "description"
         ]
-        == preview_template
+        == "{disclaimer}\n\n---\n\n{prompt}\n\n---\n\n{note}"
     )
     assert translations["options"]["step"]["preview_result"]["description"] == (
-        "Prompt Preview:\n\n{prompt_box}"
+        "{prompt}"
     )
-    assert _prompt_preview_box(
-        'first line\n\n## ENTITY MAPPINGS\n<second & line> "quoted"'
-    ) == (
-        '<ha-alert alert-type="info"><ha-markdown content="first line&#10;&#10;'
-        '## ENTITY MAPPINGS&#10;&lt;second &amp; line&gt; &quot;quoted&quot;">'
-        "</ha-markdown></ha-alert>"
+    assert "<ha-alert" not in translations["config"]["step"]["preview_full_result"][
+        "description"
+    ]
+    assert (
+        "<ha-alert"
+        not in translations["options"]["step"]["preview_result"]["description"]
     )
 
 
