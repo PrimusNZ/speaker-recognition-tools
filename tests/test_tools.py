@@ -243,6 +243,8 @@ async def test_tool_descriptions_document_person_aliases(hass, users) -> None:
 
     assert "Omit people to use the current speaker" in descriptions["get_calendar_events"]
     assert "Omit people to get everyone" in descriptions["get_person_location"]
+    assert "use that as where they are" in descriptions["get_person_location"]
+    assert "follow address_note exactly and do not guess" in descriptions["get_person_location"]
     assert "optional person parameter" in descriptions["update_calendar_event"]
     assert "optional person parameter" in descriptions["delete_calendar_event"]
 
@@ -839,7 +841,7 @@ async def test_location_of_self(hass, users) -> None:
     assert person["location"] == "home"  # the person entity wins
     assert {e["entity_id"]: e["state"] for e in person["entities"]} == {
         "person.james": "home",
-        "device_tracker.james_phone": "away",
+        "device_tracker.james_phone": "outside known zones",
     }
 
 
@@ -871,7 +873,7 @@ async def test_location_for_everyone_respects_privacy(hass, users) -> None:
 async def test_owner_can_see_their_private_tracker(hass, users) -> None:
     hass.states.async_set("device_tracker.ann_phone", "not_home")
     data, _ = await call(hass, users["Ann"], "get_person_location", people=["me"])
-    assert data["people"][0]["location"] == "away"
+    assert data["people"][0]["location"] == "outside known zones"
 
 
 async def test_location_unknown_person(hass, users) -> None:
@@ -922,14 +924,15 @@ async def _where(hass, user, who="Dad"):
     return data["people"][0]
 
 
-async def test_away_includes_the_companion_apps_geocoded_address(hass, users) -> None:
+async def test_outside_zones_uses_the_companion_apps_geocoded_address(hass, users) -> None:
     _companion_phone(hass, "james", geocoded="1 High Street\nTown\n1234\nNew Zealand")
     hass.states.async_set(
         "person.james", "not_home", {"source": "device_tracker.james_phone"}
     )
     result = await _where(hass, users["Sarah"])
-    assert result["location"] == "away"
+    assert result["location"] == "High Street, Town"
     assert result["address"] == "High Street, Town"
+    assert "away" not in str(result)
 
 
 @pytest.mark.parametrize("zone", ["home", "Work"])
@@ -957,7 +960,7 @@ async def test_address_found_without_a_person_source(hass, users) -> None:
 async def test_unusable_geocoded_sensor_gives_no_address(hass, users, state) -> None:
     _companion_phone(hass, "james", geocoded=state)
     result = await _where(hass, users["Sarah"])
-    assert result["location"] == "away"
+    assert result["location"] == "outside known zones"
     assert "address" not in result
     assert 'Reply with exactly: "Sorry Mum, An exact address for Dad is unknown."' in result["address_note"]
     assert "do not guess where" in result["address_note"]
@@ -966,7 +969,8 @@ async def test_unusable_geocoded_sensor_gives_no_address(hass, users, state) -> 
 async def test_no_address_when_the_device_reports_none(hass, users) -> None:
     hass.states.async_set("device_tracker.james_phone", "not_home")
     result = await _where(hass, users["Sarah"])
-    assert result["location"] == "away"
+    assert result["location"] == "outside known zones"
+    assert "away" not in str(result)
     assert "address" not in result
     assert result["address_note"] == (
         'Reply with exactly: "Sorry Mum, An exact address for Dad is unknown." '
@@ -1053,14 +1057,14 @@ async def test_disabled_geocoded_sensor_is_treated_as_off(hass, users) -> None:
     )
     hass.states.async_remove("sensor.james_phone_geocoded_location")
     result = await _where(hass, users["Sarah"])
-    assert result["location"] == "away"
+    assert result["location"] == "outside known zones"
     assert "address" not in result and "address_note" in result
 
 
 async def test_private_geocoded_sensor_is_not_used_for_others(hass, users) -> None:
     _companion_phone(hass, "kim", geocoded="9 Secret Street")
     other = await _where(hass, users["James"], "Cousin")
-    assert other["location"] == "away"
+    assert other["location"] == "outside known zones"
     assert "address" not in other
     assert "9 Secret Street" not in str(other)
     assert "address_note" in other
@@ -1166,11 +1170,13 @@ async def test_location_says_how_long_they_have_been_home(hass, users, freezer) 
     assert result["since"] == local(26, 15, 0).isoformat()
 
 
-async def test_location_says_how_long_they_have_been_away(hass, users, freezer) -> None:
+async def test_location_says_how_long_they_have_been_at_the_reported_address(hass, users, freezer) -> None:
     await _set_at(hass, freezer, local(26, 8, 0), "person.james", "not_home")
+    hass.states.async_set("device_tracker.james_phone", "not_home", {"address": "High Street"})
     freezer.move_to(dt_util.as_utc(now()))
     result = await _where(hass, users["Sarah"])
-    assert result["since_spoken"] == "away since eight o'clock this morning"
+    assert result["since_spoken"] == "High Street since eight o'clock this morning"
+    assert "away" not in str(result)
 
 
 async def test_location_since_for_a_named_zone(hass, users, freezer) -> None:
@@ -1188,10 +1194,12 @@ async def test_location_since_just_now(hass, users, freezer) -> None:
 
 async def test_location_since_uses_the_entity_that_gave_the_location(hass, users, freezer) -> None:
     await _set_at(hass, freezer, local(26, 9, 0), "person.james", "not_home")
-    await _set_at(hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home")
+    await _set_at(
+        hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home", {"address": "High Street"}
+    )
     freezer.move_to(dt_util.as_utc(now()))
     result = await _where(hass, users["Sarah"])
-    assert result["since_spoken"] == "away since nine o'clock this morning"
+    assert result["since_spoken"] == "High Street since nine o'clock this morning"
 
 
 async def test_no_since_when_unavailable_private_or_unassigned(hass, users, freezer) -> None:
@@ -1206,11 +1214,12 @@ async def test_no_since_when_unavailable_private_or_unassigned(hass, users, free
     assert "since" not in unassigned
 
 
-async def test_since_does_not_hide_the_address_note(hass, users, freezer) -> None:
+async def test_unknown_address_note_is_not_supplemented_with_a_location_guess(hass, users, freezer) -> None:
     await _set_at(hass, freezer, local(26, 15, 0), "device_tracker.james_phone", "not_home")
     freezer.move_to(dt_util.as_utc(now()))
     result = await _where(hass, users["Sarah"])
-    assert result["since_spoken"] == "away since three o'clock"
+    assert result["location"] == "outside known zones"
+    assert "since_spoken" not in result
     assert "An exact address for Dad is unknown" in result["address_note"]
 
 

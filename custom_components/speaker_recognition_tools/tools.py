@@ -65,7 +65,7 @@ _PERSON_PARAMETER_GUIDANCE = (
 
 
 def _no_address_note(speaker: Person, target: Person) -> str:
-    """The reply the agent must give when someone is away and no address is known."""
+    """The reply the agent must give when no exact address is known."""
     who = "you" if target.user_id == speaker.user_id else target.third_person_form
     return (
         f'Reply with exactly: "Sorry {speaker.direct_address}, An exact address for {who} '
@@ -1050,9 +1050,10 @@ class GetPersonLocationTool(_PersonTool):
         "person and device tracker entities assigned to each person. Each result "
         "has since_spoken, how long they have been there, for example 'home "
         "since three o'clock'; say it that way. When someone "
-        "is away, outside every zone, the result includes the street name and "
-        "town if their phone or tracker reports an address; not every device "
-        "does, and then the result says so. A private tracker can only be read by its owner."
+        "is outside every zone and has an address, location is their street "
+        "name and town; use that as where they are. If location is 'outside "
+        "known zones', follow address_note exactly and do not guess. A private "
+        "tracker can only be read by its owner."
     )
     annotations = _READ_ONLY or llm.Tool.annotations
     parameters = vol.Schema({vol.Optional("people"): [str]})
@@ -1092,24 +1093,28 @@ class GetPersonLocationTool(_PersonTool):
                 "location": known["state"] if known else "unavailable",
                 "entities": entities,
             }
-            # How long they have been there, ready to say aloud.
-            if known and (state := hass.states.get(known["entity_id"])) is not None:
-                entry["since"] = dt_util.as_local(state.last_changed).isoformat()
-                entry["since_spoken"] = _since_spoken(
-                    entry["location"], state.last_changed, dt_util.utcnow()
-                )
-            # Outside every zone: add a street address when one is reported.
-            if entry["location"] == "away":
+            # Outside every zone: prefer the street and town when available.
+            if entry["location"] == "outside known zones":
                 address = None
                 for tracker_id in self._trackers_to_try(hass, known, usable):
                     if address := _address_for(hass, self.household, tracker_id):
                         break
                 if address:
                     entry["address"] = address
+                    entry["location"] = address
                 else:
                     # Plenty of phones have geocoding off; say so rather than leave
                     # a gap the model might fill with a guess.
                     entry["address_note"] = _no_address_note(self.household.speaker, person)
+            # How long they have been at the reported location, ready to say aloud.
+            # With no address outside a zone, the exact address note is the reply.
+            if known and "address_note" not in entry and (
+                state := hass.states.get(known["entity_id"])
+            ) is not None:
+                entry["since"] = dt_util.as_local(state.last_changed).isoformat()
+                entry["since_spoken"] = _since_spoken(
+                    entry["location"], state.last_changed, dt_util.utcnow()
+                )
             results.append(entry)
         data: dict[str, Any] = {"people": results}
         if problems:
@@ -1306,10 +1311,10 @@ def _since_spoken(location: str, changed: datetime.datetime, now: datetime.datet
 
 
 def _location_name(state: str | None) -> str:
-    """Make a tracker state readable: not_home is away, unknown is unavailable."""
+    """Make a tracker state readable: not_home is outside known zones."""
     if state in (None, "unknown", "unavailable"):
         return "unavailable"
-    return "away" if state == "not_home" else state
+    return "outside known zones" if state == "not_home" else state
 
 
 def build_tools(people: list[Person], speaker: Person) -> list[llm.Tool]:

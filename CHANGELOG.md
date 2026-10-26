@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0.2] - 2026-10-26
+
+### Fixed
+- Use a reported street and town as the location when someone is outside every zone, instead of describing them as away.
+
 ## [0.5.0.1] - 2026-10-26
 
 ### Fixed
