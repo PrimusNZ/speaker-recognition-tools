@@ -1460,11 +1460,12 @@ async def test_others_private_entities_are_not_in_the_prompt(hass, users) -> Non
     assert not [l for l in prompt.splitlines() if l.startswith(" - ") and l.endswith("(private)")]
 
 
-async def test_owners_private_entities_are_marked_in_their_prompt(hass, users) -> None:
+async def test_owners_private_entities_are_shown_without_privacy_markers(hass, users) -> None:
     prompt = (await instance(hass, users["Sarah"])).api_prompt
-    assert " - calendar.sarah_diary (private)" in prompt
+    assert " - calendar.sarah_diary" in prompt
     assert " - calendar.sarah_home\n" in prompt or " - calendar.sarah_home |" in prompt
-    assert "Entities marked (private) belong only to that person" in prompt
+    assert "(private)" not in prompt
+    assert "Entities marked (private)" not in prompt
     assert "get_calendar_events" in prompt and "get_person_location" in prompt
 
 

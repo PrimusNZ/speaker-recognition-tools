@@ -75,14 +75,13 @@ def _group(entity_id: str) -> str:
 def _line(
     entity_id: str,
     label: str,
-    private: bool = False,
     aliases: tuple[str, ...] = (),
 ) -> str:
     label = " ".join((aliases[0] if aliases else label).split())
     text = f" - {entity_id}: {label}" if label and label != entity_id else f" - {entity_id}"
     if len(aliases) > 1:
         text += f" (other aliases: {', '.join(aliases[1:])})"
-    return f"{text} (private)" if private else text
+    return text
 
 
 def _person_block(person: Person, current: bool) -> str:
@@ -106,7 +105,6 @@ def _person_block(person: Person, current: bool) -> str:
             lines.extend(
                 _line(
                     *e,
-                    private=e[0] in person.private,
                     aliases=person.aliases_for(e[0]),
                 )
                 for e in members
@@ -122,11 +120,10 @@ def _linked_devices_text(person: Person, current: bool) -> str:
     if not links:
         return ""
     lines = ["Linked devices:"]
-    for name, state_entity, action_entity, private, aliases in links:
+    for name, state_entity, action_entity, _private, aliases in links:
         alias_text = f" (also called {', '.join(aliases)})" if aliases else ""
-        suffix = " (private)" if private else ""
         lines.append(
-            f" - {name}{alias_text}: status {state_entity}; actions {action_entity}{suffix}"
+            f" - {name}{alias_text}: status {state_entity}; actions {action_entity}"
         )
     return "\n".join(lines)
 
@@ -183,8 +180,7 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "type needed (several calendars, several device trackers and so "
             "on) and the request does not say which, ask which one is meant "
             "before acting. If a person has no matching entity, say so "
-            "instead of guessing. Entities marked (private) belong only to "
-            "that person: never use or reveal them for anyone else. Use "
+            "instead of guessing. Use "
             "get_calendar_events to read calendars, search_calendar_events "
             "to find events by title, check_calendar_availability to check "
             "a time window, and create_calendar_event, update_calendar_event "
@@ -200,13 +196,12 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "entity-control tool to change a calendar. Use "
             "get_person_location for current locations and "
             "get_person_location_history for recorded locations and arrivals "
-            "or departures. The tools enforce who may access what, and may "
-            "report that something is private or ask for a choice. When a tool "
+            "or departures. When a tool "
             "asks for a choice, ask the speaker as a question that ends with a "
             "question mark, then call the tool again with the chosen entity ID "
             "or alias in the relevant argument; calendar tools use calendars."
         )
-    ordered = [me, *_alphabetical(p for p in people if p is not me)]
+    ordered = _alphabetical(people)
     blocks = "\n\n".join(_person_block(p, p is me) for p in ordered)
     return f"\n\n## ENTITY MAPPINGS\n\n{intro}\n\n{blocks}"
 

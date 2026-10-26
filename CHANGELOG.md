@@ -15,6 +15,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0.3] - 2026-10-26
+
+### Changed
+- List people alphabetically in entity mappings instead of putting the current speaker first.
+- Omit privacy markers and privacy instructions from prompt text while continuing to enforce privacy in tools.
+
 ## [0.6.0.2] - 2026-10-26
 
 ### Fixed

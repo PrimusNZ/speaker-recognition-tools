@@ -245,6 +245,10 @@ def test_private_linked_device_is_hidden_from_other_people(prompt):
     text = person(prompt, user_id="u2", user_name="Sarah", people=[james, sarah])
     assert "Demo unit" not in text
 
+    owner_text = person(prompt, user_id="u1", user_name="James", people=[james, sarah])
+    assert "Demo unit" in owner_text
+    assert "(private)" not in owner_text
+
 
 def test_private_entity_aliases_are_hidden_from_other_people(prompt):
     james = prompt.Person("u1", "James", "Dad")
@@ -261,7 +265,8 @@ def test_private_entity_aliases_are_hidden_from_other_people(prompt):
     assert "calendar.sarah_private" not in other_view
 
     owner_view = person(prompt, user_id="u2", user_name="Sarah", people=[james, sarah])
-    assert "calendar.sarah_private: secret diary (private)" in owner_view
+    assert "calendar.sarah_private: secret diary" in owner_view
+    assert "(private)" not in owner_view
     assert "Sarah diary" not in owner_view
 
 
@@ -305,7 +310,7 @@ def test_unknown_speaker_no_people_configured_adds_nothing(prompt):
     assert "PEOPLE" not in person(prompt, people=[])
 
 
-def test_speaker_first_then_others_alphabetical(prompt):
+def test_people_are_alphabetical_with_current_speaker_in_place(prompt):
     ps = [
         P(prompt, "a", "Zoe", "Aunt"),
         P(prompt, "b", "Adam", "Uncle"),
@@ -313,7 +318,7 @@ def test_speaker_first_then_others_alphabetical(prompt):
         P(prompt, "d", "Kim", "Gran"),
     ]
     text = person(prompt, user_id="c", user_name="Mia", people=ps)
-    order = [text.index(f"### {h}") for h in ("Mia (Sis)", "Adam (Uncle)", "Kim (Gran)", "Zoe (Aunt)")]
+    order = [text.index(f"### {h}") for h in ("Adam (Uncle)", "Kim (Gran)", "Mia (Sis)", "Zoe (Aunt)")]
     assert order == sorted(order)
 
 
@@ -386,10 +391,12 @@ def test_other_peoples_private_entities_are_left_out(prompt):
     assert "calendar.diary" not in text
 
 
-def test_own_private_entities_are_marked(prompt):
+def test_own_private_entities_are_shown_without_privacy_markers(prompt):
     text = person(prompt, user_id="u2", user_name="Sarah", people=_private_people(prompt))
-    assert " - calendar.diary: Diary (private)" in text
+    assert " - calendar.diary: Diary" in text
     assert " - calendar.home: Home\n" in text + "\n"
+    assert "(private)" not in text
+    assert "Entities marked (private)" not in text
 
 
 def test_person_with_only_private_entities_shows_none_to_others(prompt):
