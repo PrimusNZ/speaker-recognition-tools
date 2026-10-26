@@ -50,11 +50,6 @@ class SpeakingPersonAPI(llm.API):
         if user_id and (user := await self.hass.auth.async_get_user(user_id)):
             user_name = _first_name(user.name)
 
-        speakers = {
-            sub.data[CONF_USER_ID]: sub.data[CONF_TITLE]
-            for sub in self._entry.subentries.values()
-            if sub.subentry_type == SUBENTRY_SPEAKER
-        }
         people = []
         for sub in self._entry.subentries.values():
             if sub.subentry_type != SUBENTRY_SPEAKER:
@@ -65,8 +60,8 @@ class SpeakingPersonAPI(llm.API):
                 state = self.hass.states.get(entity_id)
                 entities.append((entity_id, state.name if state else entity_id))
             name = _first_name(account.name) if account else None
-            title = sub.data.get(CONF_TITLE) or name
-            if not title:
+            title = sub.data.get(CONF_TITLE) or ""
+            if not name:
                 continue  # no title and no account name to fall back on
             people.append(
                 Person(
@@ -87,7 +82,7 @@ class SpeakingPersonAPI(llm.API):
         prompt = build_person_prompt(
             user_id=user_id,
             user_name=user_name,
-            speakers={p.user_id: p.title for p in people},
+            speakers={p.user_id: p.address_title for p in people},
             people=people,
             unknown_title=options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
             deny_unknown=options.get(CONF_DENY_UNKNOWN, False),

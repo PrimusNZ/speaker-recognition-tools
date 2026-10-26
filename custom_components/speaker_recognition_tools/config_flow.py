@@ -160,7 +160,7 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
             prompt = build_person_prompt(
                 user_id=user_id,
                 user_name=(account.name.split()[0] if account and account.name else None),
-                speakers={p.user_id: p.title for p in people},
+                speakers={p.user_id: p.address_title for p in people},
                 people=people,
                 unknown_title=self.config_entry.options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
                 deny_unknown=self.config_entry.options.get(CONF_DENY_UNKNOWN, False),
@@ -189,7 +189,7 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                             *[
                                 selector.SelectOptionDict(
                                     value=p.user_id,
-                                    label=f"{p.name or p.title} ({p.title})",
+                                    label=f"{p.name or p.address_title} ({p.address_title})",
                                 )
                                 for p in people
                             ],
@@ -232,7 +232,7 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
         person_prompt = build_person_prompt(
             user_id=account.id if account else None,
             user_name=(account.name.split()[0] if account and account.name else None),
-            speakers={p.user_id: p.title for p in people},
+            speakers={p.user_id: p.address_title for p in people},
             people=people,
             unknown_title=options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
             deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
@@ -339,8 +339,8 @@ async def _configured_people(hass, entry) -> list[Person]:
         account = await hass.auth.async_get_user(sub.data[CONF_USER_ID])
         name_parts = (account.name if account else "").split()
         name = name_parts[0] if name_parts else None
-        title = sub.data.get(CONF_TITLE) or name
-        if not title:
+        title = sub.data.get(CONF_TITLE) or ""
+        if not name:
             continue
         entities = tuple(
             (entity_id, hass.states.get(entity_id).name if hass.states.get(entity_id) else entity_id)

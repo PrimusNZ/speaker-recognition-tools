@@ -43,12 +43,32 @@ _PENDING_CHANGES = "pending_calendar_changes"
 _CONFIRMATION_LIFETIME = datetime.timedelta(minutes=5)
 _MAX_HISTORY_RANGE = datetime.timedelta(days=31)
 
+_PERSON_REFERENCE_GUIDANCE = (
+    "People can be identified by first name, configured title, or configured "
+    "third-person reference; these forms all refer to the same person."
+)
+
+
+def _people_parameter_guidance(default: str) -> str:
+    """Describe aliases accepted by a plural people parameter and its default."""
+    return (
+        f"people accepts one or more people. {_PERSON_REFERENCE_GUIDANCE} "
+        f"Use 'me' for the current speaker. {default}"
+    )
+
+
+_PERSON_PARAMETER_GUIDANCE = (
+    "The optional person parameter accepts a person's first name, configured "
+    "title, or configured third-person reference; these all identify the same "
+    "person. Use 'me' for the current speaker; omit person to use the current speaker."
+)
+
 
 def _no_address_note(speaker: Person, target: Person) -> str:
     """The reply the agent must give when someone is away and no address is known."""
     who = "you" if target.user_id == speaker.user_id else target.reference_title
     return (
-        f'Reply with exactly: "Sorry {speaker.title}, An exact address for {who} '
+        f'Reply with exactly: "Sorry {speaker.address_title}, An exact address for {who} '
         'is unknown." Add nothing else and do not guess where they are.'
     )
 
@@ -101,7 +121,11 @@ class Household:
                 matches = [
                     p
                     for p in self.people
-                    if key in (p.title.casefold(), p.reference_title.casefold(), (p.name or "").casefold())
+                    if key in (
+                        p.address_title.casefold(),
+                        p.reference_title.casefold(),
+                        (p.name or "").casefold(),
+                    )
                 ]
             if len(matches) == 1:
                 if matches[0] not in found:
@@ -445,7 +469,7 @@ class GetCalendarEventsTool(_PersonTool):
     title = "Get calendar events"
     description = (
         "Get the events on one or more people's calendars between a start and an "
-        "end. people lists titles, names or 'me'; leave it out for the speaker. "
+        f"end. {_people_parameter_guidance('Omit people to use the current speaker.')} "
         "start and end are ISO 8601 local dates or date times; a date-only end "
         "includes that whole day. Private calendars can only be read by their "
         "owner. If a person has more than one calendar the result asks for a "
@@ -525,8 +549,9 @@ class SearchCalendarEventsTool(_PersonTool):
     title = "Search calendar events"
     description = (
         "Find events whose title contains query on one or more people's assigned "
-        "calendars in a date range. people takes titles, names or 'me'; leave it "
-        "out for the speaker. Results include uid and recurrence_id for event "
+        "calendars in a date range. "
+        f"{_people_parameter_guidance('Omit people to use the current speaker.')} "
+        "Results include uid and recurrence_id for event "
         "updates or deletion. A private calendar can only be read by its owner."
     )
     annotations = _READ_ONLY or llm.Tool.annotations
@@ -590,7 +615,7 @@ class CheckCalendarAvailabilityTool(_PersonTool):
     title = "Check calendar availability"
     description = (
         "Check whether a time window is free on one or more people's calendars. "
-        "people takes titles, names or 'me'; leave it out for the speaker. "
+        f"{_people_parameter_guidance('Omit people to use the current speaker.')} "
         "start and end are ISO 8601 local dates or date times; a date-only end "
         "includes the whole day. Private calendars can only be checked by their owner."
     )
@@ -683,7 +708,8 @@ class DeleteCalendarEventTool(_PersonTool):
         "Always call once to preview, ask the speaker for an explicit yes, then "
         "call again with the same request, confirmation_token and confirmed=true. "
         "Never delete on the first call. Omit recurrence_id to delete the series; "
-        "provide it to delete one occurrence. Only one assigned calendar is allowed."
+        "provide it to delete one occurrence. "
+        f"{_PERSON_PARAMETER_GUIDANCE} Only one assigned calendar is allowed."
     )
     annotations = _WRITE or llm.Tool.annotations
     parameters = vol.Schema(
@@ -751,7 +777,8 @@ class UpdateCalendarEventTool(_PersonTool):
         "Always call once to preview, ask the speaker for an explicit yes, then "
         "call again with the same request, confirmation_token and confirmed=true. "
         "Never update on the first call. Only one assigned calendar is allowed. "
-        "If changing the time, provide both new_start and new_end."
+        f"{_PERSON_PARAMETER_GUIDANCE} If changing the time, provide both "
+        "new_start and new_end."
     )
     annotations = _WRITE or llm.Tool.annotations
     parameters = vol.Schema(
@@ -855,8 +882,9 @@ class CreateCalendarEventTool(_PersonTool):
         "Create an event on one or more people's calendars. Always preview the "
         "change and ask the speaker for an explicit yes before the second call "
         "with its confirmation_token and confirmed=true. Never create it on "
-        "the first call. people lists titles, "
-        "names or 'me'; leave it out for the speaker. start is an ISO 8601 local "
+        "the first call. "
+        f"{_people_parameter_guidance('Omit people to use the current speaker.')} "
+        "start is an ISO 8601 local "
         "date time, or a date for an all-day event. end is optional: one hour "
         "after start, or the same day for an all-day event. Nothing is created "
         "unless every named person's calendar can be used: a private calendar "
@@ -967,8 +995,9 @@ class GetPersonLocationTool(_PersonTool):
     name = "get_person_location"
     title = "Get person location"
     description = (
-        "Say where one or more people are. people lists titles, names or 'me'; "
-        "leave it out to get everyone, which answers who is home. Uses the "
+        "Say where one or more people are. "
+        f"{_people_parameter_guidance('Omit people to get everyone, which answers who is home.')} "
+        "Uses the "
         "person and device tracker entities assigned to each person. Each result "
         "has since_spoken, how long they have been there, for example 'home "
         "since three o'clock'; say it that way. When someone "
@@ -1068,8 +1097,9 @@ class GetPersonLocationHistoryTool(_PersonTool):
     description = (
         "Show recorded location states and transitions for one or more people "
         "between start and end. Use it to answer where someone was or when they "
-        "left or arrived. people lists titles, names or 'me'; leave it out for "
-        "the speaker. start and end are ISO 8601 local dates or date times; a "
+        "left or arrived. "
+        f"{_people_parameter_guidance('Omit people to use the current speaker.')} "
+        "start and end are ISO 8601 local dates or date times; a "
         "date-only end includes that whole day. The requested range cannot exceed "
         "31 days. Only assigned, non-private person and tracker entities are queried."
     )

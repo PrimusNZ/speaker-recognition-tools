@@ -69,6 +69,13 @@ def test_household_uses_third_person_reference_for_other_people():
     assert household.reference(target) == "The father"
     assert "An exact address for The father is unknown." in tools_module._no_address_note(speaker, target)
 
+    untitled = Person("u3", "Tom", "")
+    household = tools_module.Household([speaker, untitled], speaker)
+    found, problems = household.find(["Tom"])
+    assert not problems
+    assert found == [untitled]
+    assert household.reference(untitled) == "Tom"
+
 
 class Calendars:
     """Fake calendar services that record every call."""
@@ -143,6 +150,21 @@ async def instance(hass: HomeAssistant, user) -> llm.APIInstance:
         device_id=None,
     )
     return await llm.async_get_api(hass, PERSON_API_ID, context)
+
+
+async def test_tool_descriptions_document_person_aliases(hass, users) -> None:
+    api_instance = await instance(hass, users["James"])
+    descriptions = {tool.name: tool.description for tool in api_instance.tools}
+    assert len(descriptions) == 8
+    for description in descriptions.values():
+        assert "first name" in description
+        assert "configured title" in description
+        assert "configured third-person reference" in description
+
+    assert "Omit people to use the current speaker" in descriptions["get_calendar_events"]
+    assert "Omit people to get everyone" in descriptions["get_person_location"]
+    assert "optional person parameter" in descriptions["update_calendar_event"]
+    assert "optional person parameter" in descriptions["delete_calendar_event"]
 
 
 async def call(hass, user, tool: str, **args):

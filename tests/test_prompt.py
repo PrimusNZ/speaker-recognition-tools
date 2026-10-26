@@ -26,14 +26,21 @@ def test_person_heading(prompt):
 def test_known_speaker_gets_title_and_name(prompt):
     text = person(prompt, user_id="u1", user_name="James")
     assert "Address them as Dad." in text
-    assert 'answer "You are Dad (James)."' in text
-    assert "replace it with the title for the current speaker, which is Dad" in text
+    assert 'answer exactly "Your title is Dad, and your name is James."' in text
+    assert "An exact tool reply meant to be spoken directly to the current speaker may use 'you' or 'your'" in text
+    assert "shows [direct address] in an example or a rule" in text
+    assert "direct-address form (their configured title, or their first name if they have no title), which is Dad" in text
 
 
 def test_known_speaker_without_user_name(prompt):
-    text = person(prompt, user_id="u2", user_name=None)
-    assert "a recognised person" in text
-    assert 'answer "You are Mum."' in text
+    text = person(
+        prompt,
+        user_id="u2",
+        user_name=None,
+        people=[prompt.Person("u2", "Sarah", "Mum")],
+    )
+    assert "identifies the speaker as Sarah" in text
+    assert 'answer exactly "Your title is Mum, and your name is Sarah."' in text
 
 
 def test_third_person_reference_is_separate_from_direct_title(prompt):
@@ -49,10 +56,56 @@ def test_third_person_reference_is_separate_from_direct_title(prompt):
         people=people,
     )
     assert "Address them as Mum." in text
-    assert "When referring to them in third person, use The mother." in text
-    assert "including when it reports on the current speaker" in text
+    assert "For this speaker, the third-person form is The mother." in text
+    assert 'answer exactly "You are The mother, your title is Mum, and your name is Alex."' in text
+    assert "including in tool results" in text
     assert "Third-person reference: The father" in text
-    assert "referring to someone in third person, use their configured third-person reference" in text
+    assert "if none is set, use their title; if they have no title, use their first name" in text
+
+
+def test_reference_falls_back_to_title_then_name(prompt):
+    titled = prompt.Person("u1", "James", "Dad")
+    untitled = prompt.Person("u2", "James", "")
+    assert titled.reference_title == "Dad"
+    assert untitled.address_title == "James"
+    assert untitled.reference_title == "James"
+
+    text = person(
+        prompt,
+        user_id="u2",
+        user_name="James",
+        speakers={"u2": ""},
+        people=[untitled],
+    )
+    assert "Address them as James." in text
+    assert "direct-address form (their configured title, or their first name if they have no title), which is James" in text
+    assert 'answer exactly "Your name is James."' in text
+
+    titled_by_reference = prompt.Person(
+        "u3", "James", "", third_person_reference="The father"
+    )
+    text = person(
+        prompt,
+        user_id="u3",
+        user_name="James",
+        speakers={"u3": ""},
+        people=[titled_by_reference],
+    )
+    assert "Address them as James." in text
+    assert "Address them as The father." not in text
+    assert "For this speaker, the third-person form is The father." in text
+    assert 'answer exactly "You are The father, and your name is James."' in text
+
+    missing_name = prompt.Person("u4", None, "Dad")
+    text = person(
+        prompt,
+        user_id="u4",
+        user_name=None,
+        speakers={"u4": "Dad"},
+        people=[missing_name],
+    )
+    assert "has not been identified" in text
+    assert "Address them as Dad." not in text
 
 
 def test_known_speaker_ignores_deny_unknown(prompt):
@@ -126,7 +179,7 @@ def people(prompt, *, entities=False):
 def test_section_heading_and_intro(prompt):
     text = person(prompt, user_id="u1", user_name="James", people=people(prompt, entities=True))
     assert "\n\n## ENTITY MAPPINGS\n\nBelow is a list of people and the entities that relate to them." in text
-    assert "Refer to people by title, not by name" in text
+    assert "People may identify someone by their first name, title or third-person reference" in text
     assert '"my", "me" or "I" means Dad, the current speaker.' in text
     assert "A request naming two or more people who each have a matching type of entity (such as a calendar) uses the matching entities of each." in text
     assert "If a person has more than one entity of the type needed" in text
@@ -179,6 +232,7 @@ def test_unknown_speaker_gets_titles_but_no_entities(prompt):
         assert "calendar." not in text
         assert "\n\n## PEOPLE\n\nBelow is a list of the people in this home" in text
         assert " - James (Dad)\n - Sarah (Mum)\n - Tom (Grandad)" in text
+        assert "if none is set, use their title; if they have no title, use their first name" in text
         assert "current speaker" not in text.split("## PEOPLE")[1]
 
 
@@ -248,7 +302,7 @@ def test_denied_speaker_reveals_no_people(prompt):
 def test_title_same_as_name_is_not_repeated(prompt):
     ps = [P(prompt, "u1", "Tom", "Tom"), P(prompt, "u2", "Ann", "Aunt")]
     text = person(prompt, user_id="u1", user_name="Tom", people=ps, speakers={"u1": "Tom"})
-    assert 'answer "You are Tom."' in text
+    assert 'answer exactly "Your title is Tom, and your name is Tom."' in text
     assert "### Tom [current speaker]" in text
     assert "Tom (Tom)" not in text
     assert " - Ann (Aunt)\n - Tom" in person(prompt, people=ps)

@@ -89,7 +89,7 @@ async def _prompt(hass: HomeAssistant, user_id: str | None) -> str:
 async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> None:
     james = await _setup(hass)
     text = await _prompt(hass, james.id)
-    assert "You are Dad (James)." in text
+    assert 'answer exactly "Your title is Dad, and your name is James."' in text
     assert "## ENTITY MAPPINGS" in text
     assert "### James (Dad) [current speaker]\nCalendars:\n - calendar.james | James Calendar" in text
     assert (
@@ -143,7 +143,7 @@ async def test_missing_title_falls_back_to_first_name(hass: HomeAssistant) -> No
     await hass.async_block_till_done()
     text = await _prompt(hass, tom.id)
     assert "Address them as Tom." in text
-    assert 'answer "You are Tom."' in text
+    assert 'answer exactly "Your name is Tom."' in text
     assert "Jones" not in text
     assert "### Tom [current speaker]" in text
     assert "### Ann (Aunt)" in text
@@ -180,7 +180,7 @@ async def test_only_first_names_reach_the_prompt(hass: HomeAssistant) -> None:
     for user_id in (james.id, sarah.id, None):
         text = await _prompt(hass, user_id)
         assert "Smith" not in text and "Jones" not in text and "Anne" not in text
-    assert 'answer "You are Dad (James)."' in await _prompt(hass, james.id)
+    assert 'answer exactly "Your title is Dad, and your name is James."' in await _prompt(hass, james.id)
     assert "### Sarah (Mum)" in await _prompt(hass, james.id)
 
 

@@ -5,6 +5,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-26
+
+### Changed
+- Replace the `[title]` prompt placeholder with `[direct address]`, which also covers the first-name fallback.
+- Clarify README person-addressing fallbacks, accepted tool aliases and location reply wording.
+- Document first-name, title and third-person reference aliases in every person tool description.
+- State the direct-address and third-person fallback order consistently in every generated people section.
+- Document the direct-reply exception for exact tool replies to the current speaker.
+- Use each person's third-person reference in the identity answer when configured, and clarify that people can refer to household members by name, title or reference.
+- Fall back from a missing third-person reference to the title, then to the person's first name.
+- Keep direct address on the title, falling back to the first name, even when a third-person reference is configured.
+- Use the configured identity fields in the exact answer given when a speaker asks who they are.
+- Align the example prompt with direct-address, person-reference and calendar-confirmation behavior.
+
 ## [0.1.2] - 2026-10-26
 
 ### Added
