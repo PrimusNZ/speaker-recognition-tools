@@ -5,8 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
-- Use the first entity alias as the entity's preferred name in prompts and tool results.
+## [0.5.0.1] - 2026-10-26
+
+### Fixed
+- Use a colon between entity IDs and display names in prompt mappings, matching the aliases field format.
 
 ## [0.4.0] - 2026-10-26
 

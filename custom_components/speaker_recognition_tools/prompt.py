@@ -78,7 +78,7 @@ def _line(
     aliases: tuple[str, ...] = (),
 ) -> str:
     label = " ".join((aliases[0] if aliases else label).split())
-    text = f" - {entity_id} | {label}" if label and label != entity_id else f" - {entity_id}"
+    text = f" - {entity_id}: {label}" if label and label != entity_id else f" - {entity_id}"
     if len(aliases) > 1:
         text += f" (other aliases: {', '.join(aliases[1:])})"
     return f"{text} (private)" if private else text

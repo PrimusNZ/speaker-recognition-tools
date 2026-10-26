@@ -192,14 +192,14 @@ def test_person_blocks_with_grouped_entities(prompt):
     assert (
         "### James (Dad) [current speaker]\n"
         "Calendars:\n"
-        " - calendar.james | James\n"
+        " - calendar.james: James\n"
         "\n"
         "Devices:\n"
-        " - device_tracker.james_phone | James phone\n"
+        " - device_tracker.james_phone: James phone\n"
         "\n"
         "### Sarah (Mum)\n"
         "Calendars:\n"
-        " - calendar.sarah | Sarah\n"
+        " - calendar.sarah: Sarah\n"
         "\n"
         "### Tom (Grandad)\n"
         "(no entities)"
@@ -215,7 +215,7 @@ def test_entity_aliases_are_shown_with_their_assigned_entity(prompt):
         entity_aliases=(("calendar.james", ("work calendar", "appointments")),),
     )
     text = person(prompt, user_id="u1", user_name="James", people=[james])
-    assert "calendar.james | work calendar (other aliases: appointments)" in text
+    assert "calendar.james: work calendar (other aliases: appointments)" in text
     assert "The first alias shown for an entity is its preferred name" in text
     assert "James Calendar" not in text
     assert "pass its exact entity_id or a configured alias" in text
@@ -236,7 +236,7 @@ def test_private_entity_aliases_are_hidden_from_other_people(prompt):
     assert "calendar.sarah_private" not in other_view
 
     owner_view = person(prompt, user_id="u2", user_name="Sarah", people=[james, sarah])
-    assert "calendar.sarah_private | secret diary (private)" in owner_view
+    assert "calendar.sarah_private: secret diary (private)" in owner_view
     assert "Sarah diary" not in owner_view
 
 
@@ -253,9 +253,9 @@ def test_groups_and_order(prompt):
         people=[P(prompt, "u1", "James", "Dad", *ents), P(prompt, "u2", "Sarah", "Mum")],
     )
     assert (
-        "Calendars:\n - calendar.work | Work\n\n"
-        "Devices:\n - sensor.car_fuel | Car Fuel\n - device_tracker.phone | Phone\n\n"
-        "Other:\n - light.lamp | Lamp"
+        "Calendars:\n - calendar.work: Work\n\n"
+        "Devices:\n - sensor.car_fuel: Car Fuel\n - device_tracker.phone: Phone\n\n"
+        "Other:\n - light.lamp: Lamp"
     ) in text
 
 
@@ -323,7 +323,7 @@ def test_label_equal_to_id_or_multiline_is_clean(prompt):
             P(prompt, "u2", "Sarah", "Mum"),
         ],
     )
-    assert " - calendar.a\n - calendar.b | x y" in text
+    assert " - calendar.a\n - calendar.b: x y" in text
 
 
 def test_denied_speaker_reveals_no_people(prompt):
@@ -357,14 +357,14 @@ def _private_people(prompt):
 
 def test_other_peoples_private_entities_are_left_out(prompt):
     text = person(prompt, user_id="u1", user_name="James", people=_private_people(prompt))
-    assert " - calendar.home | Home" in text
+    assert " - calendar.home: Home" in text
     assert "calendar.diary" not in text
 
 
 def test_own_private_entities_are_marked(prompt):
     text = person(prompt, user_id="u2", user_name="Sarah", people=_private_people(prompt))
-    assert " - calendar.diary | Diary (private)" in text
-    assert " - calendar.home | Home\n" in text + "\n"
+    assert " - calendar.diary: Diary (private)" in text
+    assert " - calendar.home: Home\n" in text + "\n"
 
 
 def test_person_with_only_private_entities_shows_none_to_others(prompt):
@@ -408,7 +408,7 @@ def test_group_headings_never_follow_a_list_item_directly(prompt):
     for i, line in enumerate(lines):
         if line in ("Devices:", "Other:"):
             assert lines[i - 1] == "", f"{line} needs a blank line above it"
-    assert "A\n\nDevices:\n - device_tracker.b | B\n\nOther:\n - light.c | C" in text
+    assert "A\n\nDevices:\n - device_tracker.b: B\n\nOther:\n - light.c: C" in text
 
 
 def test_device_area_makes_here_and_this_room_resolve(prompt):

@@ -94,10 +94,10 @@ async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> No
     text = await _prompt(hass, james.id)
     assert 'answer exactly "Your form of address is Dad, and your name is James."' in text
     assert "## ENTITY MAPPINGS" in text
-    assert "### James (Dad) [current speaker]\nCalendars:\n - calendar.james | James Calendar" in text
+    assert "### James (Dad) [current speaker]\nCalendars:\n - calendar.james: James Calendar" in text
     assert (
         "### Sarah (Mum)\nCalendars:\n"
-        " - calendar.sarah | Sarah Calendar\n"
+        " - calendar.sarah: Sarah Calendar\n"
         " - calendar.gone"
     ) in text
 
@@ -153,7 +153,7 @@ async def test_assigned_entity_aliases_reach_live_prompt(hass: HomeAssistant) ->
     await hass.async_block_till_done()
 
     text = await _prompt(hass, james.id)
-    assert "calendar.james | work calendar (other aliases: appointments)" in text
+    assert "calendar.james: work calendar (other aliases: appointments)" in text
     assert "James Calendar" not in text
 
 
