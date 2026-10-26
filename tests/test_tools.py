@@ -11,7 +11,12 @@ from homeassistant.components.calendar import CalendarEvent
 from homeassistant.components.calendar.const import CalendarEntityFeature
 from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry as dr, entity_registry as er, llm
+from homeassistant.helpers import (
+    area_registry as ar,
+    device_registry as dr,
+    entity_registry as er,
+    llm,
+)
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -235,7 +240,7 @@ async def instance(hass: HomeAssistant, user) -> llm.APIInstance:
 async def test_tool_descriptions_document_person_aliases(hass, users) -> None:
     api_instance = await instance(hass, users["James"])
     descriptions = {tool.name: tool.description for tool in api_instance.tools}
-    assert len(descriptions) == 8
+    assert len(descriptions) == 10
     for description in descriptions.values():
         assert "first name" in description
         assert "configured form of address" in description
@@ -247,6 +252,153 @@ async def test_tool_descriptions_document_person_aliases(hass, users) -> None:
     assert "follow address_note exactly and do not guess" in descriptions["get_person_location"]
     assert "optional person parameter" in descriptions["update_calendar_event"]
     assert "optional person parameter" in descriptions["delete_calendar_event"]
+    assert "current state and attributes" in descriptions["get_entity_state"]
+    assert "one assigned entity" in descriptions["control_assigned_entity"]
+
+
+def _assigned_entity_tools(user, *, private=(), aliases=("Computer",)):
+    person = Person(
+        user.id,
+        "James",
+        "Dad",
+        (("switch.james_computer", "James Computer"),),
+        frozenset(private),
+        entity_aliases=(("switch.james_computer", tuple(aliases)),),
+    )
+    household = tools_module.Household([person], person)
+    return person, household
+
+
+async def _call_entity_tool(hass, user, tool, **args):
+    api_instance = await instance(hass, user)
+    result = await tool.async_call(
+        hass,
+        llm.ToolInput(tool_name=tool.name, tool_args=args),
+        api_instance.llm_context,
+    )
+    return result.data, result.error
+
+
+async def test_get_entity_state_resolves_alias_and_returns_area(hass, users) -> None:
+    area = ar.async_get(hass).async_create("Office")
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "switch", "test", "james-computer", suggested_object_id="james_computer"
+    )
+    registry.async_update_entity("switch.james_computer", area_id=area.id)
+    hass.states.async_set(
+        "switch.james_computer", "off", {"friendly_name": "James Computer", "power": "off"}
+    )
+    _, household = _assigned_entity_tools(users["James"])
+    tool = tools_module.GetEntityStateTool(household)
+
+    result, error = await _call_entity_tool(hass, users["James"], tool, entity="computer")
+
+    assert not error
+    assert result["entity"] == "Computer"
+    assert result["entity_id"] == "switch.james_computer"
+    assert result["state"] == "off"
+    assert result["attributes"] == {"friendly_name": "Computer", "power": "off"}
+    assert result["area"] == "Office"
+
+
+async def test_control_assigned_entity_calls_service_only_for_target(hass, users) -> None:
+    hass.states.async_set("switch.james_computer", "off")
+    calls = []
+
+    async def turn_on(call: ServiceCall) -> None:
+        calls.append(dict(call.data))
+        hass.states.async_set(call.data["entity_id"], "on")
+
+    hass.services.async_register("switch", "turn_on", turn_on)
+    _, household = _assigned_entity_tools(users["James"])
+    tool = tools_module.ControlAssignedEntityTool(household)
+
+    result, error = await _call_entity_tool(
+        hass, users["James"], tool, entity="Computer", service="switch.turn_on"
+    )
+
+    assert not error
+    assert calls == [{"entity_id": "switch.james_computer"}]
+    assert result["entity"] == "Computer"
+    assert result["service_called"] is True
+    assert result["state_after"] == "on"
+
+
+async def test_control_assigned_entity_rejects_unassigned_target(hass, users) -> None:
+    _, household = _assigned_entity_tools(users["James"])
+    tool = tools_module.ControlAssignedEntityTool(household)
+
+    result, error = await _call_entity_tool(
+        hass,
+        users["James"],
+        tool,
+        entity="light.lamp",
+        service="light.turn_on",
+    )
+
+    assert error
+    assert result["problem"] == "entity_not_assigned"
+
+
+async def test_control_assigned_entity_rejects_service_target_override(hass, users) -> None:
+    _, household = _assigned_entity_tools(users["James"])
+    tool = tools_module.ControlAssignedEntityTool(household)
+
+    result, error = await _call_entity_tool(
+        hass,
+        users["James"],
+        tool,
+        entity="Computer",
+        service="switch.turn_on",
+        service_data={"entity_id": "switch.other"},
+    )
+
+    assert error
+    assert result["problem"] == "target_override"
+
+
+async def test_entity_tools_refuse_another_persons_private_entity(hass, users) -> None:
+    speaker = Person(users["Sarah"].id, "Sarah", "Mum")
+    owner = Person(
+        users["James"].id,
+        "James",
+        "Dad",
+        (("switch.james_computer", "James Computer"),),
+        frozenset({"switch.james_computer"}),
+        entity_aliases=(("switch.james_computer", ("Computer",)),),
+    )
+    household = tools_module.Household([speaker, owner], speaker)
+    read_tool = tools_module.GetEntityStateTool(household)
+    control_tool = tools_module.ControlAssignedEntityTool(household)
+
+    read_result, read_error = await _call_entity_tool(
+        hass, users["Sarah"], read_tool, person="Dad", entity="Computer"
+    )
+    write_result, write_error = await _call_entity_tool(
+        hass,
+        users["Sarah"],
+        control_tool,
+        person="Dad",
+        entity="Computer",
+        service="switch.turn_on",
+    )
+
+    assert read_error and read_result["problem"] == "private"
+    assert write_error and write_result["problem"] == "private"
+
+
+async def test_entity_control_cannot_bypass_calendar_confirmation(hass, users) -> None:
+    person = Person(users["James"].id, "James", "Dad", (("calendar.james", "James Calendar"),))
+    household = tools_module.Household([person], person)
+    tool = tools_module.ControlAssignedEntityTool(household)
+
+    result, error = await _call_entity_tool(
+        hass, users["James"], tool, entity="calendar.james", service="calendar.create_event"
+    )
+
+    assert error
+    assert result["problem"] == "use_calendar_tools"
 
 
 async def call(hass, user, tool: str, **args):

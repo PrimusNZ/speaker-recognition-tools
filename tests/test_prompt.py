@@ -380,6 +380,8 @@ def test_person_with_only_private_entities_shows_none_to_others(prompt):
 def test_prompt_names_the_tools(prompt):
     text = person(prompt, user_id="u1", user_name="James", people=_private_people(prompt))
     for name in (
+        "get_entity_state",
+        "control_assigned_entity",
         "get_calendar_events",
         "search_calendar_events",
         "check_calendar_availability",

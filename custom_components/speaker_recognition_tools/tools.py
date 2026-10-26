@@ -20,7 +20,12 @@ from homeassistant.components.calendar.const import (
 from homeassistant.components.recorder import history as recorder_history
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import entity_registry as er, llm
+from homeassistant.helpers import (
+    area_registry as ar,
+    device_registry as dr,
+    entity_registry as er,
+    llm,
+)
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
@@ -504,6 +509,258 @@ class _PersonTool(llm.Tool):
                 else ([self.household.speaker], [])
             )
         return self.household.find(names)
+
+    def _entity_person(self, args: dict[str, Any]):
+        """Resolve an optional person, defaulting entity access to the speaker."""
+        requested = str(args.get("person", "")).strip()
+        if not requested:
+            return self.household.speaker, []
+        people, problems = self.household.find([requested])
+        return (people[0] if len(people) == 1 else None), problems
+
+    def _assigned_entity(self, person: Person, requested: str):
+        """Resolve an entity ID, configured name, or alias within one person's list."""
+        key = requested.strip().casefold()
+        if not key:
+            return None, {
+                "problem": "entity_required",
+                "message": "Name the assigned entity to use.",
+            }
+        matched = []
+        private_match = False
+        for entity_id, label in person.entities:
+            aliases = person.aliases_for(entity_id)
+            names = {
+                entity_id.casefold(),
+                label.casefold(),
+                *(alias.casefold() for alias in aliases),
+            }
+            if key not in names:
+                continue
+            if person.user_id != self.household.speaker.user_id and entity_id in person.private:
+                private_match = True
+                continue
+            matched.append((entity_id, person.entity_label(entity_id, label), aliases))
+        if private_match and not matched:
+            return None, {"problem": "private", "message": "That entity is private to its owner."}
+        if not matched:
+            return None, {
+                "problem": "entity_not_assigned",
+                "message": (
+                    f"No entity matching {requested!r} is assigned to "
+                    f"{self.household.reference(person)}."
+                ),
+            }
+        if len(matched) > 1:
+            return None, {
+                "problem": "choose_entity",
+                "message": (
+                    "More than one assigned entity matches. Ask which one, then call "
+                    "again with its entity ID or alias."
+                ),
+                "options": [
+                    {
+                        "entity_id": entity_id,
+                        "name": label,
+                        **({"aliases": list(aliases[1:])} if len(aliases) > 1 else {}),
+                    }
+                    for entity_id, label, aliases in matched
+                ],
+            }
+        return matched[0], None
+
+
+class GetEntityStateTool(_PersonTool):
+    """Read the state and attributes of one entity assigned to a person."""
+
+    name = "get_entity_state"
+    title = "Get assigned entity state"
+    description = (
+        "Read the current state and attributes of one assigned entity, such as a fuel "
+        "sensor or device tracker. The required entity accepts its exact entity_id, "
+        "configured name, or alias; the first alias is the preferred name to use in "
+        "your reply. Optional person accepts a first name, configured form of address, "
+        "or configured third-person reference and defaults to the current speaker. "
+        "Only read entities "
+        "assigned to that person; private entities can only be read by their owner. "
+        "The result may include its configured Home Assistant area and state attributes. "
+        "Use get_person_location for a person's presence, zones and addresses, and "
+        "calendar tools for calendar events. Do not infer a room from a home state alone."
+    )
+    annotations = _READ_ONLY or llm.Tool.annotations
+    parameters = vol.Schema({vol.Required("entity"): str, vol.Optional("person"): str})
+
+    async def async_call(
+        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+    ):
+        args = tool_input.tool_args
+        person, problems = self._entity_person(args)
+        if problems:
+            return _result({"problems": problems}, error=True)
+        target, problem = self._assigned_entity(person, str(args.get("entity", "")))
+        if problem:
+            return _result(problem, error=True)
+        entity_id, label, _ = target
+        state = hass.states.get(entity_id)
+        if state is None:
+            return _result(
+                {"entity": label, "entity_id": entity_id, "problem": "entity_unavailable"},
+                error=True,
+            )
+
+        attributes = dict(state.attributes)
+        # Do not let the entity's HA name override its configured preferred alias.
+        if "friendly_name" in attributes:
+            attributes["friendly_name"] = label
+        result: dict[str, Any] = {
+            "person": self.household.reference(person),
+            "entity": label,
+            "entity_id": entity_id,
+            "state": state.state,
+            "attributes": attributes,
+        }
+        registry_entry = er.async_get(hass).async_get(entity_id)
+        area_id = registry_entry.area_id if registry_entry else None
+        if registry_entry and not area_id and registry_entry.device_id:
+            device = dr.async_get(hass).async_get(registry_entry.device_id)
+            if device:
+                area_id = (
+                    dr.async_get_effective_area_id(hass, device)
+                    if hasattr(dr, "async_get_effective_area_id")
+                    else device.area_id
+                )
+        if area_id and (area := ar.async_get(hass).async_get_area(area_id)):
+            result["area"] = area.name
+        return _result(result)
+
+
+class ControlAssignedEntityTool(_PersonTool):
+    """Call one Home Assistant service on one entity assigned to a person."""
+
+    name = "control_assigned_entity"
+    title = "Control assigned entity"
+    description = (
+        "Perform a requested Home Assistant action on one assigned entity. entity "
+        "accepts its exact entity_id, configured name, or alias; use the first alias "
+        "as its preferred name in your reply. service must be a Home Assistant "
+        "service such as switch.turn_on, light.turn_off, climate.set_temperature, "
+        "or homeassistant.turn_on. Supply service-specific fields in service_data. "
+        "Only entities assigned to the selected person may be controlled; optional "
+        "person accepts a first name, configured form of address, or configured "
+        "third-person reference and defaults to the current speaker. Private entities can only be "
+        "controlled by their owner. The service is always targeted to that one entity; "
+        "never include entity_id, device_id, area_id, floor_id, label_id, or target in "
+        "service_data. Calendar changes must use the calendar tools and their preview "
+        "and confirmation flow. Report the returned state accurately; a successful "
+        "service call does not guarantee the device reached that state."
+    )
+    annotations = _WRITE or llm.Tool.annotations
+    parameters = vol.Schema(
+        {
+            vol.Required("entity"): str,
+            vol.Required("service"): str,
+            vol.Optional("service_data"): dict,
+            vol.Optional("person"): str,
+        }
+    )
+
+    async def async_call(
+        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+    ):
+        args = tool_input.tool_args
+        person, problems = self._entity_person(args)
+        if problems:
+            return _result({"problems": problems}, error=True)
+        target, problem = self._assigned_entity(person, str(args.get("entity", "")))
+        if problem:
+            return _result(problem, error=True)
+        entity_id, label, _ = target
+        entity_domain = entity_id.split(".", 1)[0]
+        service = str(args.get("service", "")).strip().lower()
+        parts = service.split(".")
+        if len(parts) != 2 or not all(parts):
+            return _result(
+                {"problem": "invalid_service", "message": "Use a domain.service name."},
+                error=True,
+            )
+        service_domain, service_name = parts
+        if entity_domain == "calendar":
+            return _result(
+                {
+                    "problem": "use_calendar_tools",
+                    "message": "Use the calendar tools for calendar events.",
+                },
+                error=True,
+            )
+        if service_domain == "homeassistant":
+            if service_name not in {"turn_on", "turn_off", "toggle"}:
+                return _result(
+                    {
+                        "problem": "service_not_allowed",
+                        "message": (
+                            "Only homeassistant.turn_on, turn_off, and toggle can "
+                            "target an assigned entity."
+                        ),
+                    },
+                    error=True,
+                )
+        elif service_domain != entity_domain:
+            return _result(
+                {
+                    "problem": "service_domain_mismatch",
+                    "message": "The service must belong to the entity's domain.",
+                },
+                error=True,
+            )
+        service_data = args.get("service_data") or {}
+        if not isinstance(service_data, dict):
+            return _result(
+                {
+                    "problem": "invalid_service_data",
+                    "message": "service_data must be an object.",
+                },
+                error=True,
+            )
+        reserved = {"entity_id", "device_id", "area_id", "floor_id", "label_id", "target"}
+        if reserved.intersection(service_data):
+            return _result(
+                {
+                    "problem": "target_override",
+                    "message": "service_data cannot select additional entities or targets.",
+                },
+                error=True,
+            )
+        if not hass.services.has_service(service_domain, service_name):
+            return _result({"problem": "unknown_service", "service": service}, error=True)
+        try:
+            await hass.services.async_call(
+                service_domain,
+                service_name,
+                {**service_data, "entity_id": entity_id},
+                context=llm_context.context,
+                blocking=True,
+            )
+        except (HomeAssistantError, ValueError) as err:
+            return _result(
+                {
+                    "entity": label,
+                    "entity_id": entity_id,
+                    "service": service,
+                    "error": str(err),
+                },
+                error=True,
+            )
+        state = hass.states.get(entity_id)
+        return _result(
+            {
+                "person": self.household.reference(person),
+                "entity": label,
+                "entity_id": entity_id,
+                "service": service,
+                "service_called": True,
+                **({"state_after": state.state} if state else {}),
+            }
+        )
 
 
 class GetCalendarEventsTool(_PersonTool):
@@ -1321,6 +1578,8 @@ def build_tools(people: list[Person], speaker: Person) -> list[llm.Tool]:
     """Return the tools for one recognised speaker."""
     household = Household(people, speaker)
     return [
+        GetEntityStateTool(household),
+        ControlAssignedEntityTool(household),
         GetCalendarEventsTool(household),
         SearchCalendarEventsTool(household),
         CheckCalendarAvailabilityTool(household),

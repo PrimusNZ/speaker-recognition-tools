@@ -3,6 +3,11 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] - 2026-10-26
+
+### Added
+- Add tools to read assigned entity states and call Home Assistant services on assigned entities, with per-person privacy checks.
+
 ## [Unreleased]
 
 ## [0.5.0.2] - 2026-10-26

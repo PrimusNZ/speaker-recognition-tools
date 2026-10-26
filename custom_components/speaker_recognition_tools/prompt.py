@@ -170,13 +170,18 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "or delete_calendar_event to make calendar changes. Every calendar "
             "change requires a preview and an explicit yes from the speaker "
             "before the second tool call; never confirm on their behalf. Use "
+            "get_entity_state to read the current state and attributes of an "
+            "assigned device or sensor, including its configured area, and "
+            "control_assigned_entity to perform a requested "
+            "Home Assistant service on one assigned entity. Never use the generic "
+            "entity-control tool to change a calendar. Use "
             "get_person_location for current locations and "
             "get_person_location_history for recorded locations and arrivals "
             "or departures. The tools enforce who may access what, and may "
             "report that something is private or ask for a choice. When a tool "
             "asks for a choice, ask the speaker as a question that ends with a "
-            "question mark, then call the tool again with the chosen entity "
-            "ids in calendars."
+            "question mark, then call the tool again with the chosen entity ID "
+            "or alias in the relevant argument; calendar tools use calendars."
         )
     ordered = [me, *_alphabetical(p for p in people if p is not me)]
     blocks = "\n\n".join(_person_block(p, p is me) for p in ordered)

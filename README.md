@@ -6,7 +6,7 @@ Tell your Home Assistant conversation agent who is speaking and which device the
 
 > **WARNING: assigning an entity to a person bypasses Assist's exposed-entities setting.**
 >
-> Every entity you assign here is given to your conversation agent, and to the model behind it (which may be a cloud service), **whether or not you have exposed it to Assist**. Its id, name and configured aliases go into the prompt, and the tools can read it and, for calendars, write to it. Only assign entities you are happy to share with the agent.
+> Every entity you assign here is given to your conversation agent, and to the model behind it (which may be a cloud service), **whether or not you have exposed it to Assist**. Its id, name and configured aliases go into the prompt, and the tools can read its state and attributes or call a Home Assistant service on it. Calendar changes use a separate preview and confirmation flow. Only assign entities you are happy to share with the agent.
 >
 > When someone is outside every zone, the location tool uses their **street name and town** as their location if their phone reports an address, so assigning a phone shares roughly where its owner is. Marking the person's tracker or the phone's geocoded location sensor private stops this for everyone but the owner.
 >
@@ -14,7 +14,7 @@ Tell your Home Assistant conversation agent who is speaking and which device the
 
 ## What it adds
 
-Two separate LLM APIs, added one at a time under Settings > Devices & Services > Add Integration. Each can be added once. Speaking Device only adds text to the agent's system prompt. Speaking Person adds text and, for recognised speakers only, eight tools (see [Tools](#tools)).
+Two separate LLM APIs, added one at a time under Settings > Devices & Services > Add Integration. Each can be added once. Speaking Device only adds text to the agent's system prompt. Speaking Person adds text and, for recognised speakers only, ten tools (see [Tools](#tools)).
 
 ### Speaking Person
 
@@ -57,12 +57,14 @@ The stable prefix also needs to meet the minimum length supported by the provide
 
 ## Tools
 
-Speaking Person gives recognised speakers eight tools. Unidentified speakers, and speakers who are refused by Deny unknown speakers, get none.
+Speaking Person gives recognised speakers ten tools. Unidentified speakers, and speakers who are refused by Deny unknown speakers, get none.
 
 For tools with a `people` or `person` parameter, identify people by first name, configured address form, or configured third-person reference; these forms refer to the same person. Use `me` for the current speaker. The default when the parameter is omitted depends on the tool.
 
 | Tool | What it does |
 | --- | --- |
+| `get_entity_state` | Reads the current state and attributes of one entity assigned to a person, including its configured Home Assistant area when available. Accepts an entity ID, configured name or alias; the first alias is the preferred name. Use it for questions such as a car's fuel sensor. |
+| `control_assigned_entity` | Calls a Home Assistant service on one entity assigned to a person, such as `switch.turn_on` or `climate.set_temperature`. The target is restricted to that single assigned entity; calendar changes must use the preview and confirmation tools below. |
 | `get_calendar_events` | Reads the events on one or more people's calendars between a start and an end. `people` accepts first names, configured address forms, or configured third-person references; "me" means the current speaker, and omitting `people` defaults to the speaker. A date-only end covers that whole day. |
 | `search_calendar_events` | Finds calendar events by title within a date range and returns event IDs for later updates or deletion. |
 | `check_calendar_availability` | Checks whether a time range overlaps events on one or more assigned calendars. |
@@ -75,6 +77,8 @@ For tools with a `people` or `person` parameter, identify people by first name, 
 If a person has more than one calendar and the request does not say which, the tool returns the choices and the agent asks the speaker, then calls the tool again with the chosen `entity_id`.
 
 **Privacy.** The tools enforce it, not just the prompt. A private entity can be read or written only by its owner. If someone else asks for it, the tool says it is private, and a person with one private and one shared calendar looks like they have only the shared one. Entities that are not private are open to every recognised speaker.
+
+The generic entity tools only access entities assigned to the selected person. They return the entity's state and attributes, or call a service targeted at that single entity. They do not guess a room from a `home` state, and they do not bypass the calendar confirmation flow.
 
 **What this does not protect.** The rule only applies to this integration's tools and prompt text. Other tools the agent has, such as Home Assistant's own calendar tool or device controls, can still reach any entity exposed to your conversation agent. To keep an entity out of reach of them, do not expose it to Assist. The tools use the entities you assign here, whether or not they are exposed to Assist.
 
