@@ -10,18 +10,20 @@ PERSON_API_NAME = "Speaking Person"
 DEVICE_API_ID = f"{DOMAIN}_device"
 DEVICE_API_NAME = "Speaking Device"
 
-SUBENTRY_SPEAKER = "speaker"  # one subentry per person: data {user_id, title, entities, private_entities}
+SUBENTRY_SPEAKER = "speaker"  # one subentry per person: data {user_id, address_as, entities, private_entities}
 SUBENTRY_PREVIEW = "full_prompt_preview"  # transient integration-level prompt preview flow
 CONF_USER_ID = "user_id"
-CONF_TITLE = "title"
+CONF_ADDRESS_AS = "address_as"  # Optional direct-address form shown as "Address as".
+CONF_LEGACY_ADDRESS_AS = "title"  # Read existing entries created before the field was renamed.
 CONF_THIRD_PERSON_REFERENCE = "third_person_reference"
 CONF_ENTITIES = "entities"  # optional list of entity ids
 CONF_PRIVATE_ENTITIES = "private_entities"  # subset of entities only the owner may use
-CONF_UNKNOWN_TITLE = "unknown_title"
+CONF_UNKNOWN_ADDRESS_AS = "unknown_address_as"
+CONF_LEGACY_UNKNOWN_ADDRESS_AS = "unknown_title"  # Read existing options saved before the field was renamed.
 CONF_DENY_UNKNOWN = "deny_unknown"
 CONF_REFUSAL_LINES = "refusal_lines"  # one line per row
 
-DEFAULT_UNKNOWN_TITLE = "Unknown Person"
+DEFAULT_UNKNOWN_ADDRESS_AS = "Unknown Person"
 DEFAULT_REFUSAL_LINES = (
     "That request cannot be completed.\n"
     "I'm unable to perform that action.\n"

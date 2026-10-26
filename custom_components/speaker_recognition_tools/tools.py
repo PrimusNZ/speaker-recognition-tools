@@ -44,7 +44,7 @@ _CONFIRMATION_LIFETIME = datetime.timedelta(minutes=5)
 _MAX_HISTORY_RANGE = datetime.timedelta(days=31)
 
 _PERSON_REFERENCE_GUIDANCE = (
-    "People can be identified by first name, configured title, or configured "
+    "People can be identified by first name, configured form of address, or configured "
     "third-person reference; these forms all refer to the same person."
 )
 
@@ -59,16 +59,16 @@ def _people_parameter_guidance(default: str) -> str:
 
 _PERSON_PARAMETER_GUIDANCE = (
     "The optional person parameter accepts a person's first name, configured "
-    "title, or configured third-person reference; these all identify the same "
+    "form of address, or configured third-person reference; these all identify the same "
     "person. Use 'me' for the current speaker; omit person to use the current speaker."
 )
 
 
 def _no_address_note(speaker: Person, target: Person) -> str:
     """The reply the agent must give when someone is away and no address is known."""
-    who = "you" if target.user_id == speaker.user_id else target.reference_title
+    who = "you" if target.user_id == speaker.user_id else target.third_person_form
     return (
-        f'Reply with exactly: "Sorry {speaker.address_title}, An exact address for {who} '
+        f'Reply with exactly: "Sorry {speaker.direct_address}, An exact address for {who} '
         'is unknown." Add nothing else and do not guess where they are.'
     )
 
@@ -105,12 +105,12 @@ class Household:
 
     def reference(self, person: Person) -> str:
         """Use the third-person form in tool results, even for the speaker."""
-        return person.reference_title
+        return person.third_person_form
 
     def find(
         self, names: list[str] | None
     ) -> tuple[list[Person], list[dict[str, Any]]]:
-        """Resolve titles, first names and "me" to people. Report what failed."""
+        """Resolve forms of address, first names and "me" to people. Report failures."""
         found: list[Person] = []
         problems: list[dict[str, Any]] = []
         for raw in names or []:
@@ -122,8 +122,8 @@ class Household:
                     p
                     for p in self.people
                     if key in (
-                        p.address_title.casefold(),
-                        p.reference_title.casefold(),
+                        p.direct_address.casefold(),
+                        p.third_person_form.casefold(),
                         (p.name or "").casefold(),
                     )
                 ]

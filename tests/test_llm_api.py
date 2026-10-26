@@ -8,9 +8,11 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_REFUSAL_LINES,
-    CONF_TITLE,
+    CONF_ADDRESS_AS,
+    CONF_LEGACY_ADDRESS_AS,
+    CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_TOOL_TYPE,
-    CONF_UNKNOWN_TITLE,
+    CONF_UNKNOWN_ADDRESS_AS,
     CONF_USER_ID,
     DEVICE_API_ID,
     DEVICE_API_NAME,
@@ -33,7 +35,7 @@ async def _setup(hass: HomeAssistant, deny: bool = False):
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
         options={
-            CONF_UNKNOWN_TITLE: "Unknown Person",
+            CONF_UNKNOWN_ADDRESS_AS: "Unknown Person",
             CONF_DENY_UNKNOWN: deny,
             CONF_REFUSAL_LINES: "No.",
         },
@@ -44,7 +46,7 @@ async def _setup(hass: HomeAssistant, deny: bool = False):
                 unique_id=james.id,
                 data={
                     CONF_USER_ID: james.id,
-                    CONF_TITLE: "Dad",
+                    CONF_ADDRESS_AS: "Dad",
                     CONF_ENTITIES: ["calendar.james"],
                 },
             ),
@@ -54,7 +56,7 @@ async def _setup(hass: HomeAssistant, deny: bool = False):
                 unique_id=sarah.id,
                 data={
                     CONF_USER_ID: sarah.id,
-                    CONF_TITLE: "Mum",
+                    CONF_ADDRESS_AS: "Mum",
                     CONF_ENTITIES: ["calendar.sarah", "calendar.gone"],
                 },
             ),
@@ -89,7 +91,7 @@ async def _prompt(hass: HomeAssistant, user_id: str | None) -> str:
 async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> None:
     james = await _setup(hass)
     text = await _prompt(hass, james.id)
-    assert 'answer exactly "Your title is Dad, and your name is James."' in text
+    assert 'answer exactly "Your form of address is Dad, and your name is James."' in text
     assert "## ENTITY MAPPINGS" in text
     assert "### James (Dad) [current speaker]\nCalendars:\n - calendar.james | James Calendar" in text
     assert (
@@ -97,6 +99,29 @@ async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> No
         " - calendar.sarah | Sarah Calendar\n"
         " - calendar.gone"
     ) in text
+
+
+async def test_pre_address_as_settings_remain_supported(hass: HomeAssistant) -> None:
+    james = await hass.auth.async_create_user("James", group_ids=["system-users"])
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
+        options={CONF_LEGACY_UNKNOWN_ADDRESS_AS: "Guest", CONF_DENY_UNKNOWN: False},
+        subentries_data=[
+            ConfigSubentryData(
+                subentry_type=SUBENTRY_SPEAKER,
+                title="James: Dad",
+                unique_id=james.id,
+                data={CONF_USER_ID: james.id, CONF_LEGACY_ADDRESS_AS: "Dad", CONF_ENTITIES: []},
+            )
+        ],
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert "Address them as Dad." in await _prompt(hass, james.id)
+    assert "Address them as Guest." in await _prompt(hass, None)
 
 
 async def test_prompt_unknown_speaker_sees_people(hass: HomeAssistant) -> None:
@@ -116,25 +141,25 @@ async def test_prompt_denied_speaker_sees_nothing(hass: HomeAssistant) -> None:
     assert "Sarah" not in text
 
 
-async def test_missing_title_falls_back_to_first_name(hass: HomeAssistant) -> None:
+async def test_missing_address_as_falls_back_to_first_name(hass: HomeAssistant) -> None:
     tom = await hass.auth.async_create_user("Tom Jones", group_ids=["system-users"])
     ghost = await hass.auth.async_create_user("Ann", group_ids=["system-users"])
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
-        options={CONF_UNKNOWN_TITLE: "Unknown Person", CONF_DENY_UNKNOWN: False},
+        options={CONF_UNKNOWN_ADDRESS_AS: "Unknown Person", CONF_DENY_UNKNOWN: False},
         subentries_data=[
             ConfigSubentryData(
                 subentry_type=SUBENTRY_SPEAKER,
                 title="Tom Jones",
                 unique_id=tom.id,
-                data={CONF_USER_ID: tom.id, CONF_TITLE: "", CONF_ENTITIES: []},
+                data={CONF_USER_ID: tom.id, CONF_ADDRESS_AS: "", CONF_ENTITIES: []},
             ),
             ConfigSubentryData(
                 subentry_type=SUBENTRY_SPEAKER,
                 title="Ann: Aunt",
                 unique_id=ghost.id,
-                data={CONF_USER_ID: ghost.id, CONF_TITLE: "Aunt"},
+                data={CONF_USER_ID: ghost.id, CONF_ADDRESS_AS: "Aunt"},
             ),
         ],
     )
@@ -158,19 +183,19 @@ async def test_only_first_names_reach_the_prompt(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
-        options={CONF_UNKNOWN_TITLE: "Unknown Person", CONF_DENY_UNKNOWN: False},
+        options={CONF_UNKNOWN_ADDRESS_AS: "Unknown Person", CONF_DENY_UNKNOWN: False},
         subentries_data=[
             ConfigSubentryData(
                 subentry_type=SUBENTRY_SPEAKER,
                 title="James Smith: Dad",
                 unique_id=james.id,
-                data={CONF_USER_ID: james.id, CONF_TITLE: "Dad", CONF_ENTITIES: []},
+                data={CONF_USER_ID: james.id, CONF_ADDRESS_AS: "Dad", CONF_ENTITIES: []},
             ),
             ConfigSubentryData(
                 subentry_type=SUBENTRY_SPEAKER,
                 title="Sarah Anne Jones: Mum",
                 unique_id=sarah.id,
-                data={CONF_USER_ID: sarah.id, CONF_TITLE: "Mum", CONF_ENTITIES: []},
+                data={CONF_USER_ID: sarah.id, CONF_ADDRESS_AS: "Mum", CONF_ENTITIES: []},
             ),
         ],
     )
@@ -180,7 +205,7 @@ async def test_only_first_names_reach_the_prompt(hass: HomeAssistant) -> None:
     for user_id in (james.id, sarah.id, None):
         text = await _prompt(hass, user_id)
         assert "Smith" not in text and "Jones" not in text and "Anne" not in text
-    assert 'answer exactly "Your title is Dad, and your name is James."' in await _prompt(hass, james.id)
+    assert 'answer exactly "Your form of address is Dad, and your name is James."' in await _prompt(hass, james.id)
     assert "### Sarah (Mum)" in await _prompt(hass, james.id)
 
 

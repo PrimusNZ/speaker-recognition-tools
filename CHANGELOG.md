@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-26
+
+### Changed
+- Rename the person and unknown-speaker configuration fields to Address as, while retaining support for existing saved settings.
+
 ## [0.2.0] - 2026-10-26
 
 ### Changed

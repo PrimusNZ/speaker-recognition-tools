@@ -11,13 +11,15 @@ from .const import (
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
-    CONF_TITLE,
+    CONF_ADDRESS_AS,
+    CONF_LEGACY_ADDRESS_AS,
+    CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_THIRD_PERSON_REFERENCE,
     CONF_USER_ID,
     SUBENTRY_SPEAKER,
-    CONF_UNKNOWN_TITLE,
+    CONF_UNKNOWN_ADDRESS_AS,
     DEFAULT_REFUSAL_LINES,
-    DEFAULT_UNKNOWN_TITLE,
+    DEFAULT_UNKNOWN_ADDRESS_AS,
     DEVICE_API_ID,
     DEVICE_API_NAME,
     PERSON_API_ID,
@@ -34,7 +36,7 @@ def _first_name(name: str | None) -> str | None:
 
 
 class SpeakingPersonAPI(llm.API):
-    """Adds the speaker's title and, for recognised speakers, person-aware tools."""
+    """Adds the speaker's direct-address form and person-aware tools."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(hass=hass, id=PERSON_API_ID, name=PERSON_API_NAME)
@@ -60,14 +62,14 @@ class SpeakingPersonAPI(llm.API):
                 state = self.hass.states.get(entity_id)
                 entities.append((entity_id, state.name if state else entity_id))
             name = _first_name(account.name) if account else None
-            title = sub.data.get(CONF_TITLE) or ""
+            address_as = sub.data.get(CONF_ADDRESS_AS, sub.data.get(CONF_LEGACY_ADDRESS_AS)) or ""
             if not name:
-                continue  # no title and no account name to fall back on
+                continue  # no configured address form and no account name to fall back on
             people.append(
                 Person(
                     sub.data[CONF_USER_ID],
                     name,
-                    title,
+                    address_as,
                     tuple(entities),
                     frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
                     sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
@@ -82,9 +84,12 @@ class SpeakingPersonAPI(llm.API):
         prompt = build_person_prompt(
             user_id=user_id,
             user_name=user_name,
-            speakers={p.user_id: p.address_title for p in people},
+            speakers={p.user_id: p.direct_address for p in people},
             people=people,
-            unknown_title=options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
+            unknown_address_as=options.get(
+                CONF_UNKNOWN_ADDRESS_AS,
+                options.get(CONF_LEGACY_UNKNOWN_ADDRESS_AS, DEFAULT_UNKNOWN_ADDRESS_AS),
+            ),
             deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
             refusal_lines=lines or DEFAULT_REFUSAL_LINES.splitlines(),
         )

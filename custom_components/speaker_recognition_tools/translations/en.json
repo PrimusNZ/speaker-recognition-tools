@@ -32,14 +32,14 @@
           "description": "Choose the Home Assistant user account that Speaker Recognition links to this voice, and configure how the agent addresses and refers to them.",
           "data": {
             "user_id": "Home Assistant user account",
-            "title": "Title",
+            "address_as": "Address as",
             "third_person_reference": "Third-person reference",
             "entities": "Entities",
             "private_entities": "Private entities"
           },
           "data_description": {
-            "title": "Optional. Leave blank to use the first name on the account.",
-            "third_person_reference": "Optional. Used in tool results and when talking about this person instead of addressing them directly; leave blank to use their title (for example, The father).",
+            "address_as": "Optional. Used when speaking directly to this person; leave blank to use the first name on the account.",
+            "third_person_reference": "Optional. Used in tool results and when speaking about this person rather than to them; if blank, the configured address form or first name is used (for example, The father).",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App. The agent uses them for requests like \"What's on my calendar?\" or \"What is Sarah doing on Friday?\".",
             "private_entities": "Entities from the list above that only this person may use. Anyone else is refused by the calendar and location tools, and the agent is not told about them."
           },
@@ -50,14 +50,14 @@
         "reconfigure": {
           "title": "Change person",
           "data": {
-            "title": "Title",
+            "address_as": "Address as",
             "third_person_reference": "Third-person reference",
             "entities": "Entities",
             "private_entities": "Private entities"
           },
           "data_description": {
-            "title": "Optional. Leave blank to use the first name on the account.",
-            "third_person_reference": "Optional. Used in tool results and when talking about this person instead of addressing them directly; leave blank to use their title (for example, The father).",
+            "address_as": "Optional. Used when speaking directly to this person; leave blank to use the first name on the account.",
+            "third_person_reference": "Optional. Used in tool results and when speaking about this person rather than to them; if blank, the configured address form or first name is used (for example, The father).",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App.",
             "private_entities": "Entities from the list above that only this person may use."
           },
@@ -106,7 +106,7 @@
         "title": "Speaking Person settings",
         "data": {
           "deny_unknown": "Deny unknown speakers",
-          "unknown_title": "Title for unknown speakers",
+          "unknown_address_as": "Address as for unknown speakers",
           "refusal_lines": "Refusal lines (one per row)"
         },
         "data_description": {

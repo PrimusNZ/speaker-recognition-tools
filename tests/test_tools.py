@@ -21,9 +21,9 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
-    CONF_TITLE,
+    CONF_ADDRESS_AS,
     CONF_TOOL_TYPE,
-    CONF_UNKNOWN_TITLE,
+    CONF_UNKNOWN_ADDRESS_AS,
     CONF_USER_ID,
     DOMAIN,
     PERSON_API_ID,
@@ -33,7 +33,7 @@ from custom_components.speaker_recognition_tools.const import (
 from custom_components.speaker_recognition_tools.prompt import Person
 
 PEOPLE = {
-    # name: (title, entities, private)
+    # name: (address_as, entities, private)
     "James": ("Dad", ["calendar.james", "person.james", "device_tracker.james_phone"], []),
     "Sarah": (
         "Mum",
@@ -122,17 +122,17 @@ async def users(hass: HomeAssistant, calendars: Calendars):
             unique_id=accounts[name].id,
             data={
                 CONF_USER_ID: accounts[name].id,
-                CONF_TITLE: title,
+                CONF_ADDRESS_AS: address_as,
                 CONF_ENTITIES: entities,
                 CONF_PRIVATE_ENTITIES: private,
             },
         )
-        for name, (title, entities, private) in PEOPLE.items()
+        for name, (address_as, entities, private) in PEOPLE.items()
     ]
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
-        options={CONF_UNKNOWN_TITLE: "Unknown Person", CONF_DENY_UNKNOWN: False},
+        options={CONF_UNKNOWN_ADDRESS_AS: "Unknown Person", CONF_DENY_UNKNOWN: False},
         subentries_data=subentries,
     )
     entry.add_to_hass(hass)
@@ -158,7 +158,7 @@ async def test_tool_descriptions_document_person_aliases(hass, users) -> None:
     assert len(descriptions) == 8
     for description in descriptions.values():
         assert "first name" in description
-        assert "configured title" in description
+        assert "configured form of address" in description
         assert "configured third-person reference" in description
 
     assert "Omit people to use the current speaker" in descriptions["get_calendar_events"]

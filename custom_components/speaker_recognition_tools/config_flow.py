@@ -29,13 +29,15 @@ from .const import (
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
-    CONF_TITLE,
+    CONF_ADDRESS_AS,
+    CONF_LEGACY_ADDRESS_AS,
+    CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_THIRD_PERSON_REFERENCE,
     CONF_TOOL_TYPE,
-    CONF_UNKNOWN_TITLE,
+    CONF_UNKNOWN_ADDRESS_AS,
     CONF_USER_ID,
     DEFAULT_REFUSAL_LINES,
-    DEFAULT_UNKNOWN_TITLE,
+    DEFAULT_UNKNOWN_ADDRESS_AS,
     DOMAIN,
     SUBENTRY_PREVIEW,
     SUBENTRY_SPEAKER,
@@ -86,7 +88,7 @@ class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
             title="Speaking Person",
             data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
             options={
-                CONF_UNKNOWN_TITLE: DEFAULT_UNKNOWN_TITLE,
+                CONF_UNKNOWN_ADDRESS_AS: DEFAULT_UNKNOWN_ADDRESS_AS,
                 CONF_DENY_UNKNOWN: False,
                 CONF_REFUSAL_LINES: DEFAULT_REFUSAL_LINES,
             },
@@ -131,15 +133,20 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
     async def async_step_settings(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         opts = self.config_entry.options
         if user_input is not None:
-            return self.async_create_entry(data={**opts, **user_input})
+            options = {**opts, **user_input}
+            options.pop(CONF_LEGACY_UNKNOWN_ADDRESS_AS, None)
+            return self.async_create_entry(data=options)
         schema = vol.Schema(
             {
                 vol.Required(
                     CONF_DENY_UNKNOWN, default=opts.get(CONF_DENY_UNKNOWN, False)
                 ): selector.BooleanSelector(),
                 vol.Required(
-                    CONF_UNKNOWN_TITLE,
-                    default=opts.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
+                    CONF_UNKNOWN_ADDRESS_AS,
+                    default=opts.get(
+                        CONF_UNKNOWN_ADDRESS_AS,
+                        opts.get(CONF_LEGACY_UNKNOWN_ADDRESS_AS, DEFAULT_UNKNOWN_ADDRESS_AS),
+                    ),
                 ): selector.TextSelector(),
                 vol.Required(
                     CONF_REFUSAL_LINES,
@@ -160,9 +167,12 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
             prompt = build_person_prompt(
                 user_id=user_id,
                 user_name=(account.name.split()[0] if account and account.name else None),
-                speakers={p.user_id: p.address_title for p in people},
+                speakers={p.user_id: p.direct_address for p in people},
                 people=people,
-                unknown_title=self.config_entry.options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
+                unknown_address_as=self.config_entry.options.get(
+                    CONF_UNKNOWN_ADDRESS_AS,
+                    self.config_entry.options.get(CONF_LEGACY_UNKNOWN_ADDRESS_AS, DEFAULT_UNKNOWN_ADDRESS_AS),
+                ),
                 deny_unknown=self.config_entry.options.get(CONF_DENY_UNKNOWN, False),
                 refusal_lines=_configured_refusal_lines(self.config_entry),
             )
@@ -189,7 +199,7 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                             *[
                                 selector.SelectOptionDict(
                                     value=p.user_id,
-                                    label=f"{p.name or p.address_title} ({p.address_title})",
+                                    label=f"{p.name or p.direct_address} ({p.direct_address})",
                                 )
                                 for p in people
                             ],
@@ -232,9 +242,12 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
         person_prompt = build_person_prompt(
             user_id=account.id if account else None,
             user_name=(account.name.split()[0] if account and account.name else None),
-            speakers={p.user_id: p.address_title for p in people},
+            speakers={p.user_id: p.direct_address for p in people},
             people=people,
-            unknown_title=options.get(CONF_UNKNOWN_TITLE, DEFAULT_UNKNOWN_TITLE),
+            unknown_address_as=options.get(
+                CONF_UNKNOWN_ADDRESS_AS,
+                options.get(CONF_LEGACY_UNKNOWN_ADDRESS_AS, DEFAULT_UNKNOWN_ADDRESS_AS),
+            ),
             deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
             refusal_lines=_configured_refusal_lines(person_entry),
         )
@@ -339,7 +352,7 @@ async def _configured_people(hass, entry) -> list[Person]:
         account = await hass.auth.async_get_user(sub.data[CONF_USER_ID])
         name_parts = (account.name if account else "").split()
         name = name_parts[0] if name_parts else None
-        title = sub.data.get(CONF_TITLE) or ""
+        address_as = sub.data.get(CONF_ADDRESS_AS, sub.data.get(CONF_LEGACY_ADDRESS_AS)) or ""
         if not name:
             continue
         entities = tuple(
@@ -347,7 +360,7 @@ async def _configured_people(hass, entry) -> list[Person]:
             for entity_id in sub.data.get(CONF_ENTITIES, [])
         )
         people.append(Person(
-            sub.data[CONF_USER_ID], name, title, entities,
+            sub.data[CONF_USER_ID], name, address_as, entities,
             frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
             sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
         ))
@@ -362,7 +375,7 @@ def _private_is_assigned(user_input: dict[str, Any]) -> bool:
 
 
 class SpeakerSubentryFlow(ConfigSubentryFlow):
-    """Add or change one person: a Home Assistant user account and an optional title."""
+    """Add or change one person, including their optional configured address form."""
 
     async def _user_options(self) -> list[selector.SelectOptionDict]:
         users = await self.hass.auth.async_get_users()
@@ -372,10 +385,10 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
             if not u.system_generated and u.is_active
         ]
 
-    async def _title(
-        self, user_id: str, title: str, entities: list[str], private: list[str]
+    async def _subentry_title(
+        self, user_id: str, address_as: str, entities: list[str], private: list[str]
     ) -> str:
-        """Return the list label, e.g. "James: Dad (3 entities, 1 private)"."""
+        """Return the Home Assistant subentry label."""
         user = await self.hass.auth.async_get_user(user_id)
         name = user.name if user else user_id
         count = len(entities)
@@ -384,7 +397,7 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
         )
         if private:
             amount += f", {len(private)} private"
-        return f"{f'{name}: {title}' if title else name} ({amount})"
+        return f"{f'{name}: {address_as}' if address_as else name} ({amount})"
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         entry = self._get_entry()
@@ -413,16 +426,16 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                     self._acknowledged_entity_warning = warning_key
                     errors["base"] = "entity_warnings_acknowledge"
                 else:
-                    title = user_input.get(CONF_TITLE, "").strip()
+                    address_as = user_input.get(CONF_ADDRESS_AS, "").strip()
                     return self.async_create_entry(
-                        title=await self._title(
-                            user_input[CONF_USER_ID], title,
+                        title=await self._subentry_title(
+                            user_input[CONF_USER_ID], address_as,
                             user_input.get(CONF_ENTITIES, []),
                             user_input.get(CONF_PRIVATE_ENTITIES, []),
                         ),
                         data={
                             CONF_USER_ID: user_input[CONF_USER_ID],
-                            CONF_TITLE: title,
+                            CONF_ADDRESS_AS: address_as,
                             CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
                             CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
                             **({CONF_THIRD_PERSON_REFERENCE: user_input[CONF_THIRD_PERSON_REFERENCE].strip()}
@@ -435,7 +448,7 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 vol.Required(CONF_USER_ID): selector.SelectSelector(
                     selector.SelectSelectorConfig(options=await self._user_options())
                 ),
-                vol.Optional(CONF_TITLE): selector.TextSelector(),
+                vol.Optional(CONF_ADDRESS_AS): selector.TextSelector(),
                 vol.Optional(CONF_THIRD_PERSON_REFERENCE): selector.TextSelector(),
                 vol.Optional(CONF_ENTITIES): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
@@ -471,17 +484,17 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 self._acknowledged_entity_warning = warning_key
                 errors["base"] = "entity_warnings_acknowledge"
             else:
-                title = user_input.get(CONF_TITLE, "").strip()
+                address_as = user_input.get(CONF_ADDRESS_AS, "").strip()
                 user_id = subentry.data[CONF_USER_ID]
                 return self.async_update_and_abort(
                     entry, subentry,
-                    title=await self._title(
-                        user_id, title, user_input.get(CONF_ENTITIES, []),
+                    title=await self._subentry_title(
+                        user_id, address_as, user_input.get(CONF_ENTITIES, []),
                         user_input.get(CONF_PRIVATE_ENTITIES, []),
                     ),
                     data={
                         CONF_USER_ID: user_id,
-                        CONF_TITLE: title,
+                        CONF_ADDRESS_AS: address_as,
                         CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
                         CONF_PRIVATE_ENTITIES: user_input.get(CONF_PRIVATE_ENTITIES, []),
                         **({CONF_THIRD_PERSON_REFERENCE: user_input[CONF_THIRD_PERSON_REFERENCE].strip()}
@@ -491,8 +504,10 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
         schema = vol.Schema(
             {
                 vol.Optional(
-                    CONF_TITLE,
-                    description={"suggested_value": subentry.data.get(CONF_TITLE, "")},
+                    CONF_ADDRESS_AS,
+                    description={"suggested_value": subentry.data.get(
+                        CONF_ADDRESS_AS, subentry.data.get(CONF_LEGACY_ADDRESS_AS, "")
+                    )},
                 ): selector.TextSelector(),
                 vol.Optional(
                     CONF_THIRD_PERSON_REFERENCE,
