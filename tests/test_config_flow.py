@@ -577,7 +577,7 @@ async def test_preview_shows_generated_person_prompt(hass: HomeAssistant) -> Non
     assert "Address them as Dad." in result["description_placeholders"]["prompt"]
 
 
-async def test_prompt_preview_descriptions_use_shaded_wrapping_boxes() -> None:
+async def test_prompt_preview_descriptions_render_markdown_in_shaded_boxes() -> None:
     translation_path = (
         Path(__file__).parent.parent
         / "custom_components/speaker_recognition_tools/translations/en.json"
@@ -610,9 +610,12 @@ async def test_prompt_preview_descriptions_use_shaded_wrapping_boxes() -> None:
     assert translations["options"]["step"]["preview_result"]["description"] == (
         "Prompt Preview:\n\n{prompt_box}"
     )
-    assert _prompt_preview_box("first line\n\n## ENTITY MAPPINGS\n<second & line>") == (
-        '<ha-alert alert-type="info">first line<br><br>## ENTITY MAPPINGS<br>'
-        "&lt;second &amp; line&gt;</ha-alert>"
+    assert _prompt_preview_box(
+        'first line\n\n## ENTITY MAPPINGS\n<second & line> "quoted"'
+    ) == (
+        '<ha-alert alert-type="info"><ha-markdown content="first line&#10;&#10;'
+        '## ENTITY MAPPINGS&#10;&lt;second &amp; line&gt; &quot;quoted&quot;">'
+        "</ha-markdown></ha-alert>"
     )
 
 

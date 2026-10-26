@@ -329,11 +329,14 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
 
 
 def _prompt_preview_box(prompt: str) -> str:
-    """Render literal prompt text in a shaded, wrapping Home Assistant alert."""
+    """Render prompt Markdown inside a shaded, wrapping Home Assistant alert."""
     if not prompt:
         return ""
-    escaped_prompt = html_escape(prompt, quote=False).replace("\n", "<br>")
-    return f'<ha-alert alert-type="info">{escaped_prompt}</ha-alert>'
+    escaped_prompt = html_escape(prompt, quote=True).replace("\n", "&#10;")
+    return (
+        '<ha-alert alert-type="info"><ha-markdown content="'
+        f'{escaped_prompt}"></ha-markdown></ha-alert>'
+    )
 
 
 async def _preview_account(hass, context):

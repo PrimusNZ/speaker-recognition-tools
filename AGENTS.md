@@ -16,12 +16,12 @@ See `README.md` for behaviour and `EXAMPLE_PROMPT.txt` for the sample conversati
   - `const.py`: constants.
   - `llm_api.py`: the two LLM API classes.
   - `prompt.py`: builds the prompt sections (`SPEAKING PERSON`, `ENTITY MAPPINGS`, `PEOPLE`, `SPEAKING DEVICE`).
-  - `tools.py`: the eight tools (calendar, location) and their privacy enforcement.
+  - `tools.py`: ten tools for assigned entity state and control, calendars, and locations, with privacy enforcement.
   - `translations/en.json`: UI strings.
   - `manifest.json`: integration metadata, including `version`.
 - `tests/`: one test module per source module, using `pytest-homeassistant-custom-component`.
 
-Speaking Person offers eight tools to recognised speakers: `get_calendar_events`, `search_calendar_events`, `check_calendar_availability`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `get_person_location`, and `get_person_location_history`. Unknown or refused speakers receive no tools.
+Speaking Person offers ten tools to recognised speakers: `get_entity_state`, `control_assigned_entity`, `get_calendar_events`, `search_calendar_events`, `check_calendar_availability`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `get_person_location`, and `get_person_location_history`. Unknown or refused speakers receive no tools.
 
 The full-prompt preview combines the Speaking Person section with a sample registered device's Speaking Device section. It uses the signed-in account when the options flow provides its ID, otherwise the Home Assistant owner account. The sample device is illustrative; Home Assistant controls the order of selected APIs. The preview excludes the conversation agent's own prompt and Home Assistant's API wrapper text.
 
@@ -29,7 +29,9 @@ The full-prompt preview combines the Speaking Person section with a sample regis
 
 Run the full suite with `.venv/bin/pytest` after code or behaviour changes. Add or update tests for new behaviour. Run pytest outside the sandbox as requested by the project owner; do not ask for permission again.
 
-`asyncio_mode = "auto"` is set in `pyproject.toml`. Python and test dependencies live in `.venv` (see `requirements_test.txt`).
+After changes, run `.venv/bin/ruff check .` and `npm run format:check`. If Prettier reports files that need formatting, run `npm run format`, review the diff, then rerun Ruff, Prettier, and pytest as applicable. Prettier is installed through npm; use `npm ci` if `node_modules` is missing.
+
+`asyncio_mode = "auto"` is set in `pyproject.toml`. Python and test dependencies live in `.venv` (see `requirements_test.txt` and `requirements_dev.txt`).
 
 ## Conventions
 
@@ -39,7 +41,7 @@ Run the full suite with `.venv/bin/pytest` after code or behaviour changes. Add 
 - Use only first names in anything shown to the model, never full account names.
 - Privacy is enforced in the tools, not just the prompt. A private entity can be read or written only by its owner, and other people's private entities are left out of prompts. Keep that true for any new tool.
 - Calendar create, update and delete take two calls: a preview with a confirmation token, then the change. Keep that flow for any new write tool.
-- Fixed reply wording belongs in tool results (for example "reply with exactly ..."), not in `EXAMPLE_PROMPT.txt`. Edit `EXAMPLE_PROMPT.txt` only when absolutely needed, such as removing a line that now conflicts with a tool.
+- Fixed reply wording belongs in tool results (for example "reply with exactly ..."), not in `EXAMPLE_PROMPT.txt`. Edit `EXAMPLE_PROMPT.txt` only when absolutely needed, such as removing a line that now conflicts with a tool. Do not modify the user's live conversation prompt unless explicitly asked.
 - A tool result or prompt text is an instruction to the model, not enforcement. Say so in docs.
 - Update `README.md` when behaviour, tools or prompt sections change. Keep the warnings about entities bypassing Assist's exposed-entities setting accurate.
 - Keep prompt-caching guidance provider-neutral unless asked otherwise. Home Assistant appends selected APIs at the bottom of the conversation prompt in the order they were added; this integration cannot choose that order.

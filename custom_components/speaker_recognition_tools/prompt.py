@@ -132,10 +132,11 @@ def _linked_devices_text(person: Person, current: bool) -> str:
         return ""
     lines = ["Linked devices:"]
     for name, state_entity, action_entity, _private, aliases in links:
-        alias_text = f" (also called {', '.join(aliases)})" if aliases else ""
-        lines.append(
-            f" - {name}{alias_text}: status {state_entity}; actions {action_entity}"
-        )
+        lines.append(f"- {name}")
+        if aliases:
+            lines.append(f"  - Aliases: {', '.join(aliases)}")
+        lines.append(f"  - Status entity: {state_entity}")
+        lines.append(f"  - Action entity: {action_entity}")
     return "\n".join(lines)
 
 

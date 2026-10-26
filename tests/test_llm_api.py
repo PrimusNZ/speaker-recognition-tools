@@ -139,7 +139,7 @@ async def test_linked_device_is_injected_with_shared_status_and_action_name(
     james = await _setup(hass, linked=True)
     text = await _prompt(hass, james.id)
     assert (
-        "Linked devices:\n - Demo unit (also called Lab station, Test console): status binary_sensor.demo_unit_status; actions button.demo_unit_action"
+        "Linked devices:\n- Demo unit\n  - Aliases: Lab station, Test console\n  - Status entity: binary_sensor.demo_unit_status\n  - Action entity: button.demo_unit_action"
         in text
     )
 

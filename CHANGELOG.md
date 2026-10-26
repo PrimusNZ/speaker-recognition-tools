@@ -17,6 +17,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0.4] - 2026-10-26
+
+### Changed
+
+- Format linked-device aliases, status entities, and action entities as nested prompt bullets.
+- Render Markdown formatting inside the shaded full-prompt preview alert.
+
 ### Developer
 
 - Add Ruff and Prettier configuration and formatting commands.
