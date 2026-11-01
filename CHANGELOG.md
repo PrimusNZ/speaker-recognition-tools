@@ -3,6 +3,13 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.2] - 2026-11-02
+
+### Changed
+
+- Rework **Location is private**. The person entity is now listed for everyone. Asking where a private person is, or for their location history, gets a privacy reply, and so does reading their person entity or trackers directly. Asking where their phone or other device is still works: a device at home gives its room or "home", and a device away from home gets a privacy reply. The setting description now says so.
+- Show private settings in the speaking person list: a person with **Location is private** or **To-do list is private** turned on says `location private` or `to-do list private`, and a linked device says `private`, `needs confirmation` or `administrators only` for the flags that are on. Existing entries update on the next restart.
+
 ## [0.10.1] - 2026-11-02
 
 ### Added

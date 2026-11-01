@@ -90,7 +90,7 @@ async def speaker_name(hass: HomeAssistant, data) -> str:
 
 
 async def link_title(hass: HomeAssistant, entry: ConfigEntry, data) -> str:
-    """Return the label for a linked device: its spoken name and its person."""
+    """Return the label for a linked device: its spoken name, person and flags."""
     owner = next(
         (
             sub.data
@@ -100,7 +100,17 @@ async def link_title(hass: HomeAssistant, entry: ConfigEntry, data) -> str:
         ),
         {CONF_USER_ID: data[CONF_USER_ID]},
     )
-    return f"{data[CONF_LINK_NAME]} ({await speaker_name(hass, owner)})"
+    notes = [
+        note
+        for key, note in (
+            (CONF_LINK_PRIVATE, "private"),
+            (CONF_LINK_CONFIRM, "needs confirmation"),
+            (CONF_LINK_ADMIN_ONLY, "administrators only"),
+        )
+        if data.get(key)
+    ]
+    who = ", ".join([await speaker_name(hass, owner), *notes])
+    return f"{data[CONF_LINK_NAME]} ({who})"
 
 
 async def speaker_title(hass: HomeAssistant, data) -> str:
@@ -112,6 +122,10 @@ async def speaker_title(hass: HomeAssistant, data) -> str:
     )
     if private := data.get(CONF_PRIVATE_ENTITIES):
         amount += f", {len(private)} private"
+    if data.get(CONF_LOCATION_PRIVATE):
+        amount += ", location private"
+    if todo_settings(data)[1]:
+        amount += ", to-do list private"
     form = address_as(data)
     return f"{f'{name}: {form}' if form else name} ({amount})"
 
@@ -172,8 +186,6 @@ async def async_configured_people(
         if person_entity:
             state = hass.states.get(person_entity)
             entities.append((person_entity, state.name if state else person_entity))
-            if sub.data.get(CONF_LOCATION_PRIVATE):
-                private.add(person_entity)
         for entity_id in (
             *sub.data.get(CONF_CALENDARS, []),
             *sub.data.get(CONF_ENTITIES, []),
@@ -207,6 +219,7 @@ async def async_configured_people(
                 todo_private,
                 person_entity,
                 await speaker_name(hass, sub.data),
+                bool(sub.data.get(CONF_LOCATION_PRIVATE)),
             )
         )
     return people

@@ -164,13 +164,15 @@ async def test_person_entity_comes_first_and_needs_no_assignment(
     assert "person.sam" not in person.private
 
 
-async def test_private_location_makes_the_person_entity_private(
+async def test_private_location_keeps_the_person_entity_listed(
     hass: HomeAssistant,
 ) -> None:
     person = await _one_person(
         hass, {CONF_PERSON_ENTITY: "person.sam", CONF_LOCATION_PRIVATE: True}
     )
-    assert "person.sam" in person.private
+    assert person.location_private is True
+    assert "person.sam" not in person.private
+    assert person.person_entity == "person.sam"
 
 
 async def test_account_follows_the_person_entity(hass: HomeAssistant) -> None:

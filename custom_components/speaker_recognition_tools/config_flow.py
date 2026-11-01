@@ -933,12 +933,12 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                 )
         return options
 
-    async def _entry_title(self, name: str, user_id: str) -> str:
-        """Name the link and its person in the row shown in Home Assistant."""
+    async def _entry_title(self, name: str, user_input: dict[str, Any]) -> str:
+        """Name the link, its person and its flags in the row shown in Home Assistant."""
         return await link_title(
             self.hass,
             self._get_entry(),
-            {CONF_LINK_NAME: name, CONF_USER_ID: user_id},
+            {**user_input, CONF_LINK_NAME: name},
         )
 
     def _link_names_in_use(
@@ -979,7 +979,7 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                 errors[CONF_LINK_ACTION_ENTITY] = "link_entities_must_differ"
             else:
                 return self.async_create_entry(
-                    title=await self._entry_title(name, user_input[CONF_USER_ID]),
+                    title=await self._entry_title(name, user_input),
                     data={
                         CONF_USER_ID: user_input[CONF_USER_ID],
                         CONF_LINK_NAME: name,
@@ -1042,7 +1042,7 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                 return self.async_update_and_abort(
                     entry,
                     subentry,
-                    title=await self._entry_title(name, user_input[CONF_USER_ID]),
+                    title=await self._entry_title(name, user_input),
                     data={
                         CONF_USER_ID: user_input[CONF_USER_ID],
                         CONF_LINK_NAME: name,

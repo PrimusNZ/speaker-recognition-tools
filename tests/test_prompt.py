@@ -620,13 +620,13 @@ def test_person_line_comes_before_the_user_level(prompt):
             "Sarah",
             "Mum",
             (("person.sarah", "Sarah"),),
-            frozenset({"person.sarah"}),
             person_entity="person.sarah",
+            location_private=True,
         ),
     ]
     text = person(prompt, user_id="u1", user_name="James", people=people)
     assert "### James (Dad) [current speaker]\nPerson: person.james\nUser Level:" in text
     assert " - person.james" not in text
-    assert "person.sarah" not in text
+    assert "Person: person.sarah\nUser Level:" in text
     as_sarah = person(prompt, user_id="u2", user_name="Sarah", people=people)
     assert "Person: person.sarah\nUser Level:" in as_sarah

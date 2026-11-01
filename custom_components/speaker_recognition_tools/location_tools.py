@@ -161,7 +161,8 @@ class GetPersonLocationTool(_PersonTool):
         "is outside every zone and has an address, location is their street "
         "name and town; use that as where they are. If location is 'outside "
         "known zones', follow address_note exactly and do not guess. A private "
-        "tracker can only be read by its owner."
+        "tracker can only be read by its owner. If a person's location is "
+        "private, follow the result's note and reveal nothing about where they are."
     )
     annotations = _READ_ONLY
     parameters = vol.Schema({vol.Optional("people"): [str]})
@@ -175,6 +176,17 @@ class GetPersonLocationTool(_PersonTool):
         people, problems = self._people(tool_input.tool_args, default_to_everyone=True)
         results = []
         for person in people:
+            if self.household.location_hidden(person):
+                denial = self.household.location_denial(person)
+                results.append(
+                    {
+                        "person": denial["person"],
+                        "location": None,
+                        "reason": "private",
+                        "note": denial["note"],
+                    }
+                )
+                continue
             assigned, usable = self.household.entities(person, LOCATION_DOMAINS)
             if not assigned:
                 results.append(
@@ -283,7 +295,9 @@ class GetPersonLocationHistoryTool(_PersonTool):
         f"{_people_parameter_guidance('Omit people to use the current speaker.')} "
         "start and end are ISO 8601 local dates or date times; a "
         "date-only end includes that whole day. The requested range cannot exceed "
-        "31 days. Only assigned, non-private person and tracker entities are queried."
+        "31 days. Only assigned, non-private person and tracker entities are queried. "
+        "If a person's location is private, follow the result's note and reveal "
+        "nothing about where they have been."
     )
     annotations = _READ_ONLY
     parameters = vol.Schema(
@@ -317,6 +331,17 @@ class GetPersonLocationHistoryTool(_PersonTool):
         requested: dict[str, tuple[Person, str]] = {}
         results = []
         for person in people:
+            if self.household.location_hidden(person):
+                denial = self.household.location_denial(person)
+                results.append(
+                    {
+                        "person": denial["person"],
+                        "history": [],
+                        "reason": "private",
+                        "note": denial["note"],
+                    }
+                )
+                continue
             assigned, usable = self.household.entities(person, LOCATION_DOMAINS)
             if not assigned:
                 results.append(
@@ -578,7 +603,10 @@ class GetDeviceLocationTool(_PersonTool):
         "or its street name and town when it is outside every zone. Each result "
         "has since_spoken, ready to say aloud. Follow any room_note or "
         "address_note exactly and never guess a room or a place. A private "
-        "device can only be located by its owner."
+        "device can only be located by its owner. If a person's location is "
+        "private, a device at home still gives its room or 'home', but a device "
+        "away from home returns a privacy note: follow it and reveal nothing "
+        "else about where it is."
     )
     annotations = _READ_ONLY
     parameters = vol.Schema(
@@ -615,7 +643,9 @@ class GetDeviceLocationTool(_PersonTool):
                     }
                 )
                 continue
-            devices = self._devices(hass, person, usable)
+            devices = self._devices(
+                hass, person, usable, self.household.location_hidden(person)
+            )
             if wanted:
                 matching = [d for d in devices if wanted in d.pop("_names")]
                 if not matching:
@@ -675,7 +705,11 @@ class GetDeviceLocationTool(_PersonTool):
         return list(found.items())
 
     def _devices(
-        self, hass: HomeAssistant, person: Person, usable: list[tuple[str, str]]
+        self,
+        hass: HomeAssistant,
+        person: Person,
+        usable: list[tuple[str, str]],
+        hidden: bool = False,
     ) -> list[dict[str, Any]]:
         registry = er.async_get(hass)
         devices = dr.async_get(hass)
@@ -725,6 +759,13 @@ class GetDeviceLocationTool(_PersonTool):
             if not entry or entry.platform == "mobile_app":
                 result["_names"].add("phone")
             zone = state.state if state else None
+            if hidden and zone not in (None, "home", *_UNUSABLE):
+                # Away from home: the zone or address would reveal their location.
+                denial = self.household.location_denial(person)
+                result.pop("entity_id")
+                result.update(location=None, reason="private", note=denial["note"])
+                results.append(result)
+                continue
             room = None
             # A room only makes sense while the device is at home.
             if device_id and zone in (None, "home", *_UNUSABLE):

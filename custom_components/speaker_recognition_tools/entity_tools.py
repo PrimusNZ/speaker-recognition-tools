@@ -20,7 +20,13 @@ from homeassistant.helpers import (
     llm,
 )
 
-from .tool_base import _READ_ONLY, _WRITE, _PersonTool, _result
+from .tool_base import (
+    _READ_ONLY,
+    _WRITE,
+    LOCATION_DOMAINS,
+    _PersonTool,
+    _result,
+)
 
 # Actions on these always need a spoken yes, except the ones that make things
 # more secure. Covers count only when they are a door, gate or garage door.
@@ -71,6 +77,7 @@ class GetEntityStateTool(_PersonTool):
         "or configured third-person reference and defaults to the current speaker. "
         "Only read entities "
         "assigned to that person; private entities can only be read by their owner. "
+        "A person's person entity and trackers are not readable when their location is private. "
         "For a linked device, its spoken name or any alias resolves to the status entity here. "
         "The result may include its configured Home Assistant area and state attributes. "
         "Use get_person_location for a person's presence, zones and addresses, "
@@ -96,6 +103,10 @@ class GetEntityStateTool(_PersonTool):
         if problem:
             return _result(problem, error=True)
         entity_id, label, _ = target
+        if entity_id.split(".", 1)[0] in LOCATION_DOMAINS and (
+            self.household.location_hidden(person)
+        ):
+            return _result(self.household.location_denial(person), error=True)
         state = hass.states.get(entity_id)
         if state is None:
             return _result(

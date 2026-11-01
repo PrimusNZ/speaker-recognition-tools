@@ -1219,3 +1219,51 @@ async def test_form_puts_the_private_switches_first(hass: HomeAssistant) -> None
         context={"source": "reconfigure", "subentry_id": next(iter(entry.subentries))},
     )
     assert [str(k) for k in edit["data_schema"].schema] == order[1:]
+
+
+async def test_person_title_notes_private_location_and_to_do_list(
+    hass: HomeAssistant,
+) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    hass.states.async_set("todo.jobs", "0")
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_SPEAKER), context={"source": "user"}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"],
+        {
+            CONF_PERSON_ENTITY: _person_id(user.id),
+            CONF_ADDRESS_AS: "Dad",
+            CONF_LOCATION_PRIVATE: True,
+            CONF_TODO_LIST: "todo.jobs",
+            CONF_TODO_PRIVATE: True,
+        },
+    )
+    assert result["title"] == (
+        "James: Dad (no entities, location private, to-do list private)"
+    )
+
+
+async def test_linked_device_title_notes_its_flags(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ENTITY_LINK), context={"source": "user"}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"],
+        {
+            CONF_USER_ID: user.id,
+            CONF_LINK_NAME: "Demo unit",
+            CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
+            CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
+            CONF_LINK_PRIVATE: True,
+            CONF_LINK_CONFIRM: True,
+            CONF_LINK_ADMIN_ONLY: True,
+        },
+    )
+    assert result["title"] == (
+        "Demo unit (James, private, needs confirmation, administrators only)"
+    )

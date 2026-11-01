@@ -32,6 +32,7 @@ class Person(NamedTuple):
     todo_private: bool = False  # only this person may use their to-do list
     person_entity: str | None = None  # the person entity this person is built on
     full_name: str | None = None  # the person entity's name; never shown to the model
+    location_private: bool = False  # others get a privacy denial for their location
 
     @property
     def direct_address(self) -> str:
@@ -106,8 +107,7 @@ def _todo_text(person: Person, current: bool) -> str:
 def _person_block(person: Person, current: bool) -> str:
     heading = _label(person.name, person.direct_address)
     block_heading = f"### {heading}{' [current speaker]' if current else ''}"
-    # A private person entity is left out for everyone but its owner.
-    if person.person_entity and (current or person.person_entity not in person.private):
+    if person.person_entity:
         block_heading += f"\nPerson: {person.person_entity}"
     block_heading += f"\nUser Level: {'Administrator' if person.is_admin else 'User'}"
     if person.third_person_form != person.direct_address:

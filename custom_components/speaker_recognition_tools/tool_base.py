@@ -137,6 +137,23 @@ class Household:
         usable = [e for e in assigned if owner or e[0] not in person.private]
         return assigned, usable
 
+    def location_hidden(self, person: Person) -> bool:
+        """Whether this person's whereabouts are hidden from the current speaker."""
+        return person.location_private and person.user_id != self.speaker.user_id
+
+    def location_denial(self, person: Person) -> dict[str, Any]:
+        """The result for a request that would reveal a hidden location."""
+        who = self.reference(person)
+        return {
+            "person": who,
+            "problem": "private",
+            "message": f"{who}'s location is private.",
+            "note": (
+                f"Say that {who}'s location is private. Do not say where they "
+                "are, whether they are home or away, or anything else about it."
+            ),
+        }
+
     def todo_name(self, person: Person) -> str:
         """How to name a person's to-do list aloud, for example "your to-do list"."""
         if person.user_id == self.speaker.user_id:

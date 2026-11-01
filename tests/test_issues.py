@@ -19,7 +19,9 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_ENTITY_ALIASES,
     CONF_LINK_ACTION_ENTITY,
     CONF_LINK_NAME,
+    CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
+    CONF_LOCATION_PRIVATE,
     CONF_PERSON_ENTITY,
     CONF_PRIVATE_ENTITIES,
     CONF_TODO_LIST,
@@ -252,3 +254,23 @@ async def test_listed_name_follows_the_person_entity(hass: HomeAssistant):
     hass.config_entries.async_update_entry(entry, title=entry.title)
     await _recheck(hass)
     assert _subentry(entry, SUBENTRY_SPEAKER).title == "Samuel Sample (no entities)"
+
+
+async def test_listed_titles_follow_the_private_switches(hass: HomeAssistant):
+    user = await hass.auth.async_create_user("Sam Sample")
+    entry = await _setup(
+        hass,
+        user.id,
+        [],
+        **{CONF_LOCATION_PRIVATE: True, CONF_TODO_LIST: "todo.jobs"},
+    )
+    link = _subentry(entry, SUBENTRY_ENTITY_LINK)
+    hass.config_entries.async_update_subentry(
+        entry, link, data={**link.data, CONF_LINK_PRIVATE: True}
+    )
+    await _recheck(hass)
+    assert (
+        _subentry(entry, SUBENTRY_SPEAKER).title
+        == "Sam (no entities, location private)"
+    )
+    assert _subentry(entry, SUBENTRY_ENTITY_LINK).title == "Demo unit (Sam, private)"

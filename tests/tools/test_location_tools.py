@@ -10,10 +10,11 @@ from homeassistant.helpers import (
 from homeassistant.helpers import (
     entity_registry as er,
 )
+from homeassistant.helpers import llm
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.speaker_recognition_tools import location_tools
+from custom_components.speaker_recognition_tools import entity_tools, location_tools
 from custom_components.speaker_recognition_tools.location_tools import (
     _device_room,
     _since_phrase,
@@ -24,6 +25,7 @@ from custom_components.speaker_recognition_tools.tool_base import Household
 from tests.tools.helpers import (
     _problems,
     call,
+    instance,
     local,
     now,
 )
@@ -705,3 +707,179 @@ async def test_private_room_sensor_is_not_read_for_others(hass) -> None:
     )  # registered by _phone_with_beacon
     assert _device_room(hass, Household([owner, other], other), beacon.id) is None
     assert _device_room(hass, Household([owner, other], owner), beacon.id)[0] == "Study"
+
+
+# ----------------------------------------------------------- private location
+
+
+def _hidden_household(users, speaker="James"):
+    james = Person(
+        users["James"].id,
+        "James",
+        "Dad",
+        (("device_tracker.james_phone", "Phone"),),
+        person_entity="person.james",
+    )
+    sarah = Person(
+        users["Sarah"].id,
+        "Sarah",
+        "Mum",
+        (("person.sarah", "Sarah"), ("device_tracker.sarah_phone", "Phone")),
+        person_entity="person.sarah",
+        location_private=True,
+    )
+    return Household([james, sarah], james if speaker == "James" else sarah)
+
+
+async def _ask(hass, users, tool_cls, speaker="James", **args):
+    tool = tool_cls(_hidden_household(users, speaker))
+    api_instance = await instance(hass, users[speaker])
+    result = await tool.async_call(
+        hass,
+        llm.ToolInput(tool_name=tool.name, tool_args=args),
+        api_instance.llm_context,
+    )
+    return result.data, result.error
+
+
+def _sarah_is(hass, zone: str, phone: str | None = None, **attributes) -> None:
+    hass.states.async_set(
+        "person.sarah",
+        zone,
+        {"device_trackers": ["device_tracker.sarah_phone"], **attributes},
+    )
+    hass.states.async_set("device_tracker.sarah_phone", phone or zone)
+
+
+async def test_others_get_a_privacy_note_instead_of_a_private_location(
+    hass, users
+) -> None:
+    _sarah_is(hass, "Work")
+    data, error = await _ask(
+        hass, users, location_tools.GetPersonLocationTool, people=["Mum"]
+    )
+    assert not error
+    (entry,) = data["people"]
+    assert entry["reason"] == "private" and entry["location"] is None
+    assert "Mum's location is private" in entry["note"]
+    assert "Work" not in str(data)
+
+
+async def test_home_is_hidden_too_for_a_private_location(hass, users) -> None:
+    _sarah_is(hass, "home")
+    data, _ = await _ask(hass, users, location_tools.GetPersonLocationTool)
+    by_person = {p["person"]: p for p in data["people"]}
+    assert by_person["Mum"]["reason"] == "private"
+    assert "home" not in str(by_person["Mum"]).replace("whether they are home", "")
+
+
+async def test_owner_still_sees_their_own_private_location(hass, users) -> None:
+    _sarah_is(hass, "Work")
+    data, error = await _ask(
+        hass, users, location_tools.GetPersonLocationTool, speaker="Sarah", people=["me"]
+    )
+    assert not error
+    assert data["people"][0]["location"] == "Work"
+
+
+async def test_private_location_hides_the_history(hass, users) -> None:
+    data, error = await _ask(
+        hass,
+        users,
+        location_tools.GetPersonLocationHistoryTool,
+        people=["Mum"],
+        start="2026-10-29",
+        end="2026-10-30",
+    )
+    assert not error
+    assert data["people"][0]["reason"] == "private"
+    assert data["people"][0]["history"] == []
+
+
+async def test_private_location_device_at_home_gives_home(hass, users) -> None:
+    _sarah_is(hass, "home")
+    data, error = await _ask(
+        hass, users, location_tools.GetDeviceLocationTool, people=["Mum"]
+    )
+    assert not error
+    (device,) = data["people"][0]["devices"]
+    assert device["location"] == "home"
+
+
+async def test_private_location_device_at_home_gives_its_room(hass, users) -> None:
+    config = MockConfigEntry(domain="test")
+    config.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=config.entry_id, identifiers={("test", "sarah")}
+    )
+    er.async_get(hass).async_get_or_create(
+        "device_tracker",
+        "test",
+        "sarah-phone",
+        device_id=device.id,
+        config_entry=config,
+        suggested_object_id="sarah_phone",
+    )
+    _sarah_is(hass, "home")
+    hass.states.async_set("device_tracker.sarah_phone", "home", {"area": "Study"})
+    data, _ = await _ask(
+        hass, users, location_tools.GetDeviceLocationTool, people=["Mum"]
+    )
+    assert data["people"][0]["devices"][0]["room"] == "Study"
+
+
+async def test_private_location_device_away_gets_a_privacy_note(hass, users) -> None:
+    _sarah_is(hass, "Work")
+    data, error = await _ask(
+        hass, users, location_tools.GetDeviceLocationTool, people=["Mum"]
+    )
+    assert not error
+    (device,) = data["people"][0]["devices"]
+    assert device["reason"] == "private" and device["location"] is None
+    assert "Mum's location is private" in device["note"]
+    assert "Work" not in str(data) and "entity_id" not in device
+
+
+async def test_private_location_device_away_outside_zones_hides_the_address(
+    hass, users
+) -> None:
+    _sarah_is(hass, "not_home", address="17 Fixture Lane")
+    data, _ = await _ask(
+        hass, users, location_tools.GetDeviceLocationTool, people=["Mum"]
+    )
+    assert "Fixture" not in str(data)
+    assert data["people"][0]["devices"][0]["reason"] == "private"
+
+
+async def test_private_location_device_unavailable_says_so(hass, users) -> None:
+    _sarah_is(hass, "home", phone="unavailable")
+    data, _ = await _ask(
+        hass, users, location_tools.GetDeviceLocationTool, people=["Mum"]
+    )
+    assert data["people"][0]["devices"][0]["location"] == "unavailable"
+
+
+async def test_private_location_blocks_direct_state_reads(hass, users) -> None:
+    _sarah_is(hass, "Work")
+    for entity in ("person.sarah", "device_tracker.sarah_phone"):
+        data, error = await _ask(
+            hass,
+            users,
+            entity_tools.GetEntityStateTool,
+            entity=entity,
+            person="Mum",
+        )
+        assert error and data["problem"] == "private"
+        assert "Work" not in str(data)
+
+
+async def test_owner_can_read_their_own_person_entity(hass, users) -> None:
+    _sarah_is(hass, "Work")
+    data, error = await _ask(
+        hass,
+        users,
+        entity_tools.GetEntityStateTool,
+        speaker="Sarah",
+        entity="person.sarah",
+    )
+    assert not error and data["state"] == "Work"
