@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -19,16 +20,22 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
     CONF_ADDRESS_AS,
+    CONF_ADMIN_ENTITIES,
+    CONF_CONFIRM_ENTITIES,
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
     CONF_LEGACY_ADDRESS_AS,
     CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_ADMIN_ONLY,
     CONF_LINK_ALIASES,
+    CONF_LINK_CONFIRM,
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
+    CONF_MIN_CONFIDENCE,
+    CONF_NOTIFY_SERVICE,
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_THIRD_PERSON_REFERENCE,
@@ -631,6 +638,8 @@ async def test_linked_device_translations_cover_add_and_reconfigure() -> None:
         "state_entity": "Entity for status information",
         "action_entity": "Entity for actions",
         "private": "Private to this person",
+        "confirm": "Actions need confirmation",
+        "admin_only": "Actions are for administrators only",
     }
     assert linked_device["step"]["user"]["data"] == expected_fields
     assert linked_device["step"]["reconfigure"]["data"] == expected_fields
@@ -655,7 +664,7 @@ async def test_preview_shows_unknown_speaker_prompt(hass: HomeAssistant) -> None
 
 
 async def test_full_prompt_preview_uses_logged_in_account_and_sample_device(
-    hass: HomeAssistant,
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     entry = await _person_entry(hass)
     user = await _user(hass, "James")
@@ -711,6 +720,7 @@ async def test_full_prompt_preview_uses_logged_in_account_and_sample_device(
     assert "randomly selected registered device" in disclaimer
     assert "example rendering" not in note
     assert "order they were added" in note
+    assert "device_registry.devices" not in caplog.text
 
 
 async def test_reconfigure_person_changes_address_as_and_entities(
@@ -847,3 +857,126 @@ async def test_reconfigure_rejects_unassigned_private(hass: HomeAssistant) -> No
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {CONF_PRIVATE_ENTITIES: "private_not_assigned"}
+
+
+async def test_reconfigure_saves_confirmation_and_admin_only_entities(
+    hass: HomeAssistant,
+) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad", ["lock.a", "switch.b"])
+    sub_id = next(iter(entry.subentries))
+    result = await _reconfigure(
+        hass,
+        entry,
+        sub_id,
+        {
+            CONF_ENTITIES: ["lock.a", "switch.b"],
+            CONF_CONFIRM_ENTITIES: ["switch.b"],
+            CONF_ADMIN_ENTITIES: ["lock.a"],
+        },
+    )
+    assert result["reason"] == "reconfigure_successful"
+    data = entry.subentries[sub_id].data
+    assert data[CONF_CONFIRM_ENTITIES] == ["switch.b"]
+    assert data[CONF_ADMIN_ENTITIES] == ["lock.a"]
+
+
+@pytest.mark.parametrize(
+    ("field", "error"),
+    [
+        (CONF_CONFIRM_ENTITIES, "confirm_not_assigned"),
+        (CONF_ADMIN_ENTITIES, "admin_not_assigned"),
+    ],
+)
+async def test_guarded_entities_must_be_assigned(
+    hass: HomeAssistant, field: str, error: str
+) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad", ["lock.a"])
+    sub_id = next(iter(entry.subentries))
+    result = await _reconfigure(
+        hass, entry, sub_id, {CONF_ENTITIES: ["lock.a"], field: ["lock.other"]}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {field: error}
+
+
+async def test_linked_device_saves_confirmation_and_admin_only_flags(
+    hass: HomeAssistant,
+) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ENTITY_LINK), context={"source": "user"}
+    )
+    await hass.config_entries.subentries.async_configure(
+        flow["flow_id"],
+        {
+            CONF_USER_ID: user.id,
+            CONF_LINK_NAME: "Demo unit",
+            CONF_LINK_STATE_ENTITY: "binary_sensor.demo_unit_status",
+            CONF_LINK_ACTION_ENTITY: "button.demo_unit_action",
+            CONF_LINK_CONFIRM: True,
+            CONF_LINK_ADMIN_ONLY: True,
+        },
+    )
+    link = next(
+        sub
+        for sub in entry.subentries.values()
+        if sub.subentry_type == SUBENTRY_ENTITY_LINK
+    )
+    assert link.data[CONF_LINK_CONFIRM] is True
+    assert link.data[CONF_LINK_ADMIN_ONLY] is True
+
+
+async def test_person_message_action_is_saved(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    sub_id = next(iter(entry.subentries))
+    result = await _reconfigure(
+        hass,
+        entry,
+        sub_id,
+        {CONF_ENTITIES: [], CONF_NOTIFY_SERVICE: " notify.mobile_app_phone "},
+    )
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.subentries[sub_id].data[CONF_NOTIFY_SERVICE] == (
+        "notify.mobile_app_phone"
+    )
+
+
+async def test_person_message_action_must_be_a_notify_action(
+    hass: HomeAssistant,
+) -> None:
+    entry = await _person_entry(hass)
+    user = await _user(hass, "James")
+    await _add_person(hass, entry, user.id, "Dad")
+    sub_id = next(iter(entry.subentries))
+    result = await _reconfigure(
+        hass, entry, sub_id, {CONF_ENTITIES: [], CONF_NOTIFY_SERVICE: "light.turn_on"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_NOTIFY_SERVICE: "invalid_notify_service"}
+
+
+async def test_settings_save_minimum_confidence(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await hass.config_entries.options.async_configure(
+        flow["flow_id"], {"next_step_id": "settings"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        flow["flow_id"],
+        {
+            CONF_DENY_UNKNOWN: False,
+            CONF_UNKNOWN_ADDRESS_AS: "Visitor",
+            CONF_REFUSAL_LINES: "No.",
+            CONF_MIN_CONFIDENCE: 0.75,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_MIN_CONFIDENCE] == 0.75

@@ -26,17 +26,32 @@ CONF_THIRD_PERSON_REFERENCE = "third_person_reference"
 CONF_ENTITIES = "entities"  # optional list of entity ids
 CONF_ENTITY_ALIASES = "entity_aliases"  # entity id to alternate names
 CONF_PRIVATE_ENTITIES = "private_entities"  # subset of entities only the owner may use
+CONF_CONFIRM_ENTITIES = "confirm_entities"  # subset needing a spoken yes to control
+CONF_ADMIN_ENTITIES = "admin_entities"  # subset only administrators may control
+CONF_NOTIFY_SERVICE = (
+    "notify_service"  # optional notify action for messages, e.g. notify.mobile_app_x
+)
 CONF_LINK_NAME = "link_name"
 CONF_LINK_ALIASES = "link_aliases"  # alternate names for the linked device
 CONF_LINK_STATE_ENTITY = "state_entity"
 CONF_LINK_ACTION_ENTITY = "action_entity"
 CONF_LINK_PRIVATE = "private"
+CONF_LINK_CONFIRM = "confirm"  # actions need a spoken yes
+CONF_LINK_ADMIN_ONLY = "admin_only"  # only administrators may use the action entity
 CONF_UNKNOWN_ADDRESS_AS = "unknown_address_as"
 CONF_LEGACY_UNKNOWN_ADDRESS_AS = (
     "unknown_title"  # Read existing options saved before the field was renamed.
 )
 CONF_DENY_UNKNOWN = "deny_unknown"
 CONF_REFUSAL_LINES = "refusal_lines"  # one line per row
+CONF_MIN_CONFIDENCE = (
+    "min_confidence"  # below this, writes also confirm identity; 0 is off
+)
+
+EVENT_SPEAKER = f"{DOMAIN}_speaker"  # fired once per Speaking Person turn
+SIGNAL_SPEAKER = (
+    f"{DOMAIN}_speaker_{{}}"  # dispatcher signal, formatted with the entry id
+)
 
 DEFAULT_UNKNOWN_ADDRESS_AS = "Unknown Person"
 DEFAULT_REFUSAL_LINES = (

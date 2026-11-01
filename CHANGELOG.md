@@ -3,6 +3,35 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.0] - 2026-11-02
+
+### Added
+
+- Ask for a spoken yes before unlocking a lock, disarming an alarm panel, or opening a door, gate or garage door cover through `control_assigned_entity`. Locking, arming, closing and stopping still run straight away.
+- Add per-person **Entities that need confirmation** and a linked-device **Actions need confirmation** option, which make every action on those entities wait for a spoken yes.
+- Add per-person **Administrator-only entities** and a linked-device **Actions are for administrators only** option. Only administrator speakers can control them; anyone can still read their state.
+- Add per-person to-do list tools: `get_todo_items`, `add_todo_item`, `update_todo_item` and `remove_todo_item`. Changes are previewed and need a yes. Household lists, such as a shared shopping list, are left out unless assigned to a person.
+- Add `send_message_to_person`, which previews and then sends a message to a person's phone through their new **Message action** setting or their assigned notify entities.
+- Add a **Last speaker** sensor and a `speaker_recognition_tools_speaker` event, updated on every Speaking Person turn with the speaker, device, area and recognition confidence.
+- Add **Minimum recognition confidence for changes**. When Speaker Recognition scores a turn below it, every change through the tools needs a yes and the agent first confirms who is speaking. The score is read from Speaker Recognition's internal decision history; when it cannot be read, nothing changes.
+- Raise Repairs issues for people or linked devices that refer to entities or message actions that no longer exist, and for people whose user account was deleted. Renamed entities are now updated automatically in every setting.
+- Add a diagnostics download that describes each person's setup without names, aliases or addresses.
+- List to-do lists as their own group in entity mappings.
+
+### Changed
+
+- `speaker_recognition_tools.get_user_level` now returns the Speaking Person's configured unknown speaker address form as `address_as` for anyone who is not a configured person, instead of `null`.
+- Require Home Assistant 2026.10 or later. HACS now blocks installs on older versions, and the compatibility code for older versions is removed. Older versions previously failed to load the integration.
+
+### Fixed
+
+- Look up Assist devices for the full-prompt preview without the deprecated device registry mapping access, which stops working in Home Assistant 2027.9.
+
+### Developer
+
+- Load configured people from one shared module for the prompt, tools, previews and actions, instead of separate copies.
+- Split the tools into entity, calendar, location, to-do and message modules with shared helpers, and split the tool tests to match under `tests/tools/`.
+
 ## [0.7.0] - 2026-11-02
 
 ### Added

@@ -13,8 +13,15 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import ServiceValidationError
 
-from .config_flow import _configured_people
-from .const import CONF_TOOL_TYPE, DOMAIN, TOOL_TYPE_PERSON
+from .const import (
+    CONF_LEGACY_UNKNOWN_ADDRESS_AS,
+    CONF_TOOL_TYPE,
+    CONF_UNKNOWN_ADDRESS_AS,
+    DEFAULT_UNKNOWN_ADDRESS_AS,
+    DOMAIN,
+    TOOL_TYPE_PERSON,
+)
+from .people import async_configured_people
 from .prompt import Person
 
 SERVICE_GET_USER_LEVEL = "get_user_level"
@@ -55,6 +62,19 @@ def _answer(
     return answer
 
 
+def _unknown_address_as(hass: HomeAssistant) -> str:
+    """The unknown speaker's address form configured on Speaking Person."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_PERSON:
+            return entry.options.get(
+                CONF_UNKNOWN_ADDRESS_AS,
+                entry.options.get(
+                    CONF_LEGACY_UNKNOWN_ADDRESS_AS, DEFAULT_UNKNOWN_ADDRESS_AS
+                ),
+            )
+    return DEFAULT_UNKNOWN_ADDRESS_AS
+
+
 def _match_person(people: list[Person], text: str) -> list[Person]:
     """People whose first name, address form or third-person reference matches."""
     key = text.strip().casefold()
@@ -71,22 +91,28 @@ def _match_person(people: list[Person], text: str) -> list[Person]:
 
 
 async def _get_user_level(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
-    """Return a person's Home Assistant user level for use in scripts."""
+    """Return a person's Home Assistant user level for use in scripts.
+
+    Anyone who is not a configured person is addressed as the Speaking Person's
+    configured unknown speaker address form.
+    """
     person_text = (call.data.get(ATTR_PERSON) or "").strip()
     user_id = (call.data.get(ATTR_USER_ID) or "").strip()
     if person_text and user_id:
         raise ServiceValidationError("Give either person or user_id, not both.")
 
+    unknown = _unknown_address_as(hass)
     people: list[Person] = []
     for entry in hass.config_entries.async_entries(DOMAIN):
         if entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_PERSON:
-            people.extend(await _configured_people(hass, entry))
+            people.extend(await async_configured_people(hass, entry))
 
     if person_text:
         matches = _match_person(people, person_text)
         if len(matches) != 1:
             return _answer(
                 found=False,
+                address_as=unknown,
                 reason="ambiguous_person" if matches else "unknown_person",
             )
         person = matches[0]
@@ -102,7 +128,7 @@ async def _get_user_level(hass: HomeAssistant, call: ServiceCall) -> ServiceResp
     # No person given: use the user ID, or the user who triggered the script.
     user_id = user_id or (call.context.user_id if call.context else None) or ""
     if not user_id:
-        return _answer(found=False, reason="no_user")
+        return _answer(found=False, address_as=unknown, reason="no_user")
     person = next((p for p in people if p.user_id == user_id), None)
     if person is not None:
         return _answer(
@@ -116,13 +142,16 @@ async def _get_user_level(hass: HomeAssistant, call: ServiceCall) -> ServiceResp
     # Not a configured person: still report the account's level, first name only.
     account = await hass.auth.async_get_user(user_id)
     if account is None:
-        return _answer(found=False, user_id=user_id, reason="unknown_user")
+        return _answer(
+            found=False, user_id=user_id, address_as=unknown, reason="unknown_user"
+        )
     parts = (account.name or "").split()
     return _answer(
         found=True,
         is_admin=account.is_admin,
         user_id=account.id,
         name=parts[0] if parts else None,
+        address_as=unknown,
     )
 
 

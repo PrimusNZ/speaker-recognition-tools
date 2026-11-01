@@ -25,6 +25,9 @@ class Person(NamedTuple):
     entity_aliases: tuple[tuple[str, tuple[str, ...]], ...] = ()
     entity_links: tuple[tuple[str, str, str, bool, tuple[str, ...]], ...] = ()
     is_admin: bool = False
+    confirm: frozenset[str] = frozenset()  # entity ids whose actions need a yes
+    admin_only: frozenset[str] = frozenset()  # entity ids only admins may control
+    notify_service: str | None = None  # notify action used to message this person
 
     @property
     def direct_address(self) -> str:
@@ -55,6 +58,7 @@ class Person(NamedTuple):
 
 _GROUPS = (
     ("Calendars", {"calendar"}),
+    ("To-do lists", {"todo"}),
     ("Devices", {"device_tracker", "sensor", "binary_sensor", "person"}),
 )
 
@@ -202,9 +206,14 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "get_calendar_events to read calendars, search_calendar_events "
             "to find events by title, check_calendar_availability to check "
             "a time window, and create_calendar_event, update_calendar_event "
-            "or delete_calendar_event to make calendar changes. Every calendar "
-            "change requires a preview and an explicit yes from the speaker "
-            "before the second tool call; never confirm on their behalf. Use "
+            "or delete_calendar_event to make calendar changes. Use "
+            "get_todo_items to read a person's own to-do lists, and "
+            "add_todo_item, update_todo_item or remove_todo_item to change "
+            "them. Use send_message_to_person to send someone a message on "
+            "their phone. Every calendar change, to-do change and message, "
+            "and some device actions, require a preview and an explicit yes "
+            "from the speaker before the second tool call; never confirm on "
+            "their behalf. Use "
             "get_entity_state to read the current state and attributes of an "
             "assigned device or sensor, including its configured area, and "
             "control_assigned_entity to perform a requested Home Assistant "
@@ -217,7 +226,8 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "or departures. When a tool "
             "asks for a choice, ask the speaker as a question that ends with a "
             "question mark, then call the tool again with the chosen entity ID "
-            "or alias in the relevant argument; calendar tools use calendars."
+            "or alias in the relevant argument; calendar tools use calendars "
+            "and to-do tools use lists."
         )
     ordered = _alphabetical(people)
     blocks = "\n\n".join(_person_block(p, p is me) for p in ordered)

@@ -7,41 +7,41 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import llm
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_ADDRESS_AS,
     CONF_DENY_UNKNOWN,
-    CONF_ENTITIES,
-    CONF_ENTITY_ALIASES,
-    CONF_LEGACY_ADDRESS_AS,
     CONF_LEGACY_UNKNOWN_ADDRESS_AS,
-    CONF_LINK_ACTION_ENTITY,
-    CONF_LINK_ALIASES,
-    CONF_LINK_NAME,
-    CONF_LINK_PRIVATE,
-    CONF_LINK_STATE_ENTITY,
-    CONF_PRIVATE_ENTITIES,
+    CONF_MIN_CONFIDENCE,
     CONF_REFUSAL_LINES,
-    CONF_THIRD_PERSON_REFERENCE,
     CONF_UNKNOWN_ADDRESS_AS,
-    CONF_USER_ID,
     DEFAULT_REFUSAL_LINES,
     DEFAULT_UNKNOWN_ADDRESS_AS,
     DEVICE_API_ID,
     DEVICE_API_NAME,
+    EVENT_SPEAKER,
     PERSON_API_ID,
     PERSON_API_NAME,
-    SUBENTRY_ENTITY_LINK,
-    SUBENTRY_SPEAKER,
+    SIGNAL_SPEAKER,
 )
+from .people import async_configured_people, first_name
 from .prompt import Person, build_device_prompt, build_person_prompt
+from .recognition import latest_confidence
 from .tools import build_tools
 
 
-def _first_name(name: str | None) -> str | None:
-    """Return the first word of an account name; only first names reach the prompt."""
-    parts = (name or "").split()
-    return parts[0] if parts else None
+def _device_and_area(
+    hass: HomeAssistant, device_id: str | None
+) -> tuple[str | None, str | None]:
+    """Return the device's name and its effective area's name."""
+    device_name = area_name = None
+    if device_id and (device := dr.async_get(hass).async_get(device_id)):
+        device_name = device.name
+        area_id = dr.async_get_effective_area_id(hass, device)
+        if area_id and (area := ar.async_get(hass).async_get_area(area_id)):
+            area_name = area.name
+    return device_name, area_name
 
 
 class SpeakingPersonAPI(llm.API):
@@ -59,55 +59,9 @@ class SpeakingPersonAPI(llm.API):
 
         user_name = None
         if user_id and (user := await self.hass.auth.async_get_user(user_id)):
-            user_name = _first_name(user.name)
+            user_name = first_name(user.name)
 
-        people = []
-        links_by_user: dict[str, list[tuple[str, str, str, bool, tuple[str, ...]]]] = {}
-        for sub in self._entry.subentries.values():
-            if sub.subentry_type != SUBENTRY_ENTITY_LINK:
-                continue
-            data = sub.data
-            links_by_user.setdefault(data[CONF_USER_ID], []).append(
-                (
-                    data[CONF_LINK_NAME],
-                    data[CONF_LINK_STATE_ENTITY],
-                    data[CONF_LINK_ACTION_ENTITY],
-                    data.get(CONF_LINK_PRIVATE, False),
-                    tuple(data.get(CONF_LINK_ALIASES, [])),
-                )
-            )
-        for sub in self._entry.subentries.values():
-            if sub.subentry_type != SUBENTRY_SPEAKER:
-                continue
-            account = await self.hass.auth.async_get_user(sub.data[CONF_USER_ID])
-            entities = []
-            for entity_id in sub.data.get(CONF_ENTITIES, []):
-                state = self.hass.states.get(entity_id)
-                entities.append((entity_id, state.name if state else entity_id))
-            name = _first_name(account.name) if account else None
-            address_as = (
-                sub.data.get(CONF_ADDRESS_AS, sub.data.get(CONF_LEGACY_ADDRESS_AS))
-                or ""
-            )
-            if not name:
-                continue  # no configured address form and no account name to fall back on
-            entity_aliases = tuple(
-                (entity_id, tuple(names))
-                for entity_id, names in sub.data.get(CONF_ENTITY_ALIASES, {}).items()
-            )
-            people.append(
-                Person(
-                    sub.data[CONF_USER_ID],
-                    name,
-                    address_as,
-                    tuple(entities),
-                    frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
-                    sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
-                    entity_aliases,
-                    tuple(links_by_user.get(sub.data[CONF_USER_ID], [])),
-                    account.is_admin,
-                )
-            )
+        people = await async_configured_people(self.hass, self._entry)
 
         lines = [
             line.strip()
@@ -130,9 +84,49 @@ class SpeakingPersonAPI(llm.API):
         )
         # Tools are only offered to recognised speakers, never to unknown ones.
         speaker = next((p for p in people if p.user_id == user_id), None)
-        tools = build_tools(people, speaker) if speaker else []
+        confidence = (
+            latest_confidence(self.hass, user_id, llm_context.device_id)
+            if speaker
+            else None
+        )
+        threshold = float(options.get(CONF_MIN_CONFIDENCE, 0) or 0)
+        uncertain = bool(
+            threshold and confidence is not None and confidence < threshold
+        )
+        tools = build_tools(people, speaker, uncertain=uncertain) if speaker else []
+        self._announce(speaker, llm_context, confidence, uncertain)
         return llm.APIInstance(
             api=self, api_prompt=prompt, llm_context=llm_context, tools=tools
+        )
+
+    def _announce(
+        self,
+        speaker: Person | None,
+        llm_context: llm.LLMContext,
+        confidence: float | None,
+        uncertain: bool,
+    ) -> None:
+        """Tell automations and the Last speaker sensor who is speaking."""
+        device_name, area_name = _device_and_area(self.hass, llm_context.device_id)
+        data = {
+            "recognised": speaker is not None,
+            "user_id": speaker.user_id if speaker else None,
+            "name": speaker.name if speaker else None,
+            "address_as": speaker.direct_address if speaker else None,
+            "device_id": llm_context.device_id,
+            "device": device_name,
+            "area": area_name,
+            "confidence": confidence,
+            "uncertain": uncertain,
+            "time": dt_util.utcnow().isoformat(),
+        }
+        self.hass.bus.async_fire(
+            EVENT_SPEAKER,
+            data,
+            context=llm_context.context,
+        )
+        async_dispatcher_send(
+            self.hass, SIGNAL_SPEAKER.format(self._entry.entry_id), data
         )
 
 
@@ -145,20 +139,7 @@ class SpeakingDeviceAPI(llm.API):
     async def async_get_api_instance(
         self, llm_context: llm.LLMContext
     ) -> llm.APIInstance:
-        device_name = area_name = None
-        if llm_context.device_id:
-            device = dr.async_get(self.hass).async_get(llm_context.device_id)
-            if device:
-                device_name = device.name
-                area_id = (
-                    dr.async_get_effective_area_id(self.hass, device)
-                    if hasattr(dr, "async_get_effective_area_id")
-                    else device.area_id
-                )
-                if area_id and (
-                    area := ar.async_get(self.hass).async_get_area(area_id)
-                ):
-                    area_name = area.name
+        device_name, area_name = _device_and_area(self.hass, llm_context.device_id)
         prompt = build_device_prompt(
             device_id=llm_context.device_id,
             device_name=device_name,

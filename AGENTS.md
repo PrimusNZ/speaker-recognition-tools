@@ -11,17 +11,25 @@ See `README.md` for behaviour and `EXAMPLE_PROMPT.txt` for the sample conversati
 ## Layout
 
 - `custom_components/speaker_recognition_tools/`
-  - `__init__.py`: entry setup.
-  - `config_flow.py`: config and options flows, person subentries, prompt preview, entity checks.
+  - `__init__.py`: entry setup, including the sensor platform and Repairs checks for Speaking Person entries.
+  - `config_flow.py`: config and options flows, person and linked-device subentries, prompt preview, entity checks.
   - `const.py`: constants.
-  - `llm_api.py`: the two LLM API classes.
-  - `prompt.py`: builds the prompt sections (`SPEAKING PERSON`, `ENTITY MAPPINGS`, `PEOPLE`, `SPEAKING DEVICE`).
-  - `tools.py`: ten tools for assigned entity state and control, calendars, and locations, with privacy enforcement.
+  - `people.py`: loads configured people from an entry; the single source for the prompt, tools, previews and actions.
+  - `llm_api.py`: the two LLM API classes. Speaking Person also fires the `speaker_recognition_tools_speaker` event each turn.
+  - `prompt.py`: builds the prompt sections (`SPEAKING PERSON`, `ENTITY MAPPINGS`, `PEOPLE`, `SPEAKING DEVICE`) and defines `Person`.
+  - `tools.py`: `build_tools`, which assembles the tools for one recognised speaker.
+  - `tool_base.py`: shared tool pieces: `Household`, target resolution, the base tool class, and the preview and confirmation flow.
+  - `entity_tools.py`, `calendar_tools.py`, `location_tools.py`, `todo_tools.py`, `message_tools.py`: the tools, grouped by area.
+  - `recognition.py`: reads the turn's confidence score from Speaker Recognition's internal decision history, defensively.
+  - `issues.py`: follows entity renames and raises Repairs issues for missing entities, message actions and accounts.
+  - `diagnostics.py`: the diagnostics download, without names, aliases or addresses.
+  - `sensor.py`: the Last speaker sensor.
+  - `services.py`, `services.yaml`: the `get_user_level` action.
   - `translations/en.json`: UI strings.
   - `manifest.json`: integration metadata, including `version`.
-- `tests/`: one test module per source module, using `pytest-homeassistant-custom-component`.
+- `tests/`: one test module per source module, using `pytest-homeassistant-custom-component`. Tool tests live in `tests/tools/`, with shared fixtures in its `conftest.py` and helpers in `helpers.py`.
 
-Speaking Person offers ten tools to recognised speakers: `get_entity_state`, `control_assigned_entity`, `get_calendar_events`, `search_calendar_events`, `check_calendar_availability`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `get_person_location`, and `get_person_location_history`. Unknown or refused speakers receive no tools.
+Speaking Person offers fifteen tools to recognised speakers: `get_entity_state`, `control_assigned_entity`, `get_calendar_events`, `search_calendar_events`, `check_calendar_availability`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `get_person_location`, `get_person_location_history`, `get_todo_items`, `add_todo_item`, `update_todo_item`, `remove_todo_item`, and `send_message_to_person`. Unknown or refused speakers receive no tools.
 
 The full-prompt preview combines the Speaking Person section with a sample registered device's Speaking Device section. It uses the signed-in account when the options flow provides its ID, otherwise the Home Assistant owner account. The sample device is illustrative; Home Assistant controls the order of selected APIs. The preview excludes the conversation agent's own prompt and Home Assistant's API wrapper text.
 
@@ -51,7 +59,8 @@ After changes, run `.venv/bin/ruff check .` and `npm run format:check`. If Prett
 - Do not use real-world data or examples provided by the user in tests, documentation, or other project examples unless explicitly asked. Generate sensible synthetic data instead.
 - Use only first names in anything shown to the model, never full account names.
 - Privacy is enforced in the tools, not just the prompt. A private entity can be read or written only by its owner, and other people's private entities are left out of prompts. Keep that true for any new tool.
-- Calendar create, update and delete take two calls: a preview with a confirmation token, then the change. Keep that flow for any new write tool.
+- Calendar, to-do and message changes take two calls: a preview with a confirmation token, then the change. `control_assigned_entity` does the same for sensitive actions, for entities marked as needing confirmation, and when recognition confidence is low. Use `_PersonTool._confirm` for any new write tool.
+- Administrator-only entities are enforced in the tools from `Person.is_admin`. Keep that check for any new tool that controls entities.
 - Fixed reply wording belongs in tool results (for example "reply with exactly ..."), not in `EXAMPLE_PROMPT.txt`. Edit `EXAMPLE_PROMPT.txt` only when absolutely needed, such as removing a line that now conflicts with a tool. Do not modify the user's live conversation prompt unless explicitly asked.
 - A tool result or prompt text is an instruction to the model, not enforcement. Say so in docs.
 - Update `README.md` when behaviour, tools or prompt sections change. Keep the warnings about entities bypassing Assist's exposed-entities setting accurate.

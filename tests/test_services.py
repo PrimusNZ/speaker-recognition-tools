@@ -98,6 +98,7 @@ async def test_unknown_person_is_never_an_administrator(hass, users, who) -> Non
     assert result["found"] is False
     assert result["is_admin"] is False
     assert result["level"] is None
+    assert result["address_as"] == "Unknown Person"
 
 
 async def test_unknown_person_reason(hass, users) -> None:
@@ -119,6 +120,7 @@ async def test_ambiguous_person_is_not_guessed(hass: HomeAssistant) -> None:
     assert result["found"] is False
     assert result["is_admin"] is False
     assert result["reason"] == "ambiguous_person"
+    assert result["address_as"] == "Unknown Person"
 
 
 async def test_person_and_user_id_together_is_an_error(hass, users) -> None:
@@ -142,7 +144,7 @@ async def test_user_id_of_an_account_that_is_not_a_configured_person(
     assert result["configured"] is False
     assert result["level"] == "Administrator"
     assert result["name"] == "Robin"
-    assert result["address_as"] is None
+    assert result["address_as"] == "Unknown Person"
 
 
 async def test_unknown_user_id(hass, users) -> None:
@@ -150,6 +152,7 @@ async def test_unknown_user_id(hass, users) -> None:
     assert result["found"] is False
     assert result["is_admin"] is False
     assert result["reason"] == "unknown_user"
+    assert result["address_as"] == "Unknown Person"
 
 
 async def test_defaults_to_the_user_who_started_the_script(hass, users) -> None:
@@ -164,6 +167,7 @@ async def test_no_user_in_context_is_not_found(hass, users) -> None:
     assert result["found"] is False
     assert result["reason"] == "no_user"
     assert result["is_admin"] is False
+    assert result["address_as"] == "Unknown Person"
 
 
 async def test_only_first_names_are_returned(hass, users) -> None:
@@ -183,3 +187,45 @@ async def test_responds_without_any_configured_people(hass: HomeAssistant) -> No
     result = await call(hass, {"person": "Alex"})
     assert result["found"] is False
     assert result["is_admin"] is False
+
+
+async def _unknown_option_setup(hass: HomeAssistant, options: dict):
+    member = await hass.auth.async_create_user("Sam Sample", group_ids=["system-users"])
+    stranger = await hass.auth.async_create_user("Robin Visitor", group_ids=[])
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
+        options=options,
+        subentries_data=[_speaker(member, "Mum")],
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    return member, stranger
+
+
+async def test_unknown_people_use_the_configured_unknown_address_form(
+    hass: HomeAssistant,
+) -> None:
+    member, stranger = await _unknown_option_setup(
+        hass, {"unknown_address_as": "Stranger"}
+    )
+    results = {
+        "unknown_person": await call(hass, {"person": "Nobody"}),
+        "unknown_user": await call(hass, {"user_id": "no-such-user"}),
+        "no_user": await call(hass),
+        "not_configured": await call(hass, {"user_id": stranger.id}),
+    }
+    for name, result in results.items():
+        assert result["address_as"] == "Stranger", name
+    assert results["not_configured"]["configured"] is False
+    assert results["not_configured"]["name"] == "Robin"
+    # A configured person keeps their own address form.
+    assert (await call(hass, {"person": "Sam"}))["address_as"] == "Mum"
+
+
+async def test_unknown_address_form_reads_the_legacy_option(
+    hass: HomeAssistant,
+) -> None:
+    await _unknown_option_setup(hass, {"unknown_title": "Infiltrator"})
+    result = await call(hass, {"person": "Nobody"})
+    assert result["address_as"] == "Infiltrator"

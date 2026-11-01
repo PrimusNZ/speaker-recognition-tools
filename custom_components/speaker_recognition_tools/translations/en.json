@@ -36,14 +36,20 @@
             "third_person_reference": "Third-person reference",
             "entities": "Entities",
             "entity_aliases": "Entity aliases",
-            "private_entities": "Private entities"
+            "private_entities": "Private entities",
+            "confirm_entities": "Entities that need confirmation",
+            "admin_entities": "Administrator-only entities",
+            "notify_service": "Message action"
           },
           "data_description": {
             "address_as": "Optional. Used when speaking directly to this person; leave blank to use the first name on the account.",
             "third_person_reference": "Optional. Used in tool results and when speaking about this person rather than to them; if blank, the configured address form or first name is used (for example, The father).",
             "entity_aliases": "Optional. Add one line per assigned entity in the format entity_id: alias, another alias. The first alias becomes its preferred name; remaining aliases are alternate names. Calendar tools accept any alias when selecting a calendar.",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App. The agent uses them for requests like \"What's on my calendar?\" or \"What is Sarah doing on Friday?\".",
-            "private_entities": "Entities from the list above that only this person may use. Anyone else is refused by the calendar and location tools, and the agent is not told about them."
+            "private_entities": "Entities from the list above that only this person may use. Anyone else is refused by the calendar and location tools, and the agent is not told about them.",
+            "confirm_entities": "Entities from the list above where any action needs a spoken yes first, for example a heater or a door opener. Locks, alarm panels, and garage door, gate and door covers always need one, except for locking, arming, closing and stopping.",
+            "admin_entities": "Entities from the list above that only Home Assistant administrators can control through this integration. Anyone can still read their state.",
+            "notify_service": "Optional. The notify action used when someone asks the agent to send this person a message, for example the Companion App's notify.mobile_app_ action for their phone. Notify entities in the Entities list are used too."
           },
           "description_placeholders": {
             "entity_warnings": "{entity_warnings}"
@@ -56,14 +62,20 @@
             "third_person_reference": "Third-person reference",
             "entities": "Entities",
             "entity_aliases": "Entity aliases",
-            "private_entities": "Private entities"
+            "private_entities": "Private entities",
+            "confirm_entities": "Entities that need confirmation",
+            "admin_entities": "Administrator-only entities",
+            "notify_service": "Message action"
           },
           "data_description": {
             "address_as": "Optional. Used when speaking directly to this person; leave blank to use the first name on the account.",
             "third_person_reference": "Optional. Used in tool results and when speaking about this person rather than to them; if blank, the configured address form or first name is used (for example, The father).",
             "entity_aliases": "Optional. Add one line per assigned entity in the format entity_id: alias, another alias. The first alias becomes its preferred name; remaining aliases are alternate names. Calendar tools accept any alias when selecting a calendar.",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App.",
-            "private_entities": "Entities from the list above that only this person may use."
+            "private_entities": "Entities from the list above that only this person may use.",
+            "confirm_entities": "Entities from the list above where any action needs a spoken yes first, for example a heater or a door opener. Locks, alarm panels, and garage door, gate and door covers always need one, except for locking, arming, closing and stopping.",
+            "admin_entities": "Entities from the list above that only Home Assistant administrators can control through this integration. Anyone can still read their state.",
+            "notify_service": "Optional. The notify action used when someone asks the agent to send this person a message, for example the Companion App's notify.mobile_app_ action for their phone. Notify entities in the Entities list are used too."
           },
           "description_placeholders": {
             "entity_warnings": "{entity_warnings}"
@@ -76,7 +88,10 @@
         "invalid_entity_aliases": "Each alias line must use entity_id: alias, and the entity must be assigned to this person.",
         "base": {
           "entity_warnings_acknowledge": "Review the entity warnings below and submit again to keep these assignments."
-        }
+        },
+        "confirm_not_assigned": "Every entity that needs confirmation must also be in the Entities list.",
+        "admin_not_assigned": "Every administrator-only entity must also be in the Entities list.",
+        "invalid_notify_service": "Choose a notify action, such as notify.mobile_app_phone."
       },
       "abort": {
         "reconfigure_successful": "Person updated."
@@ -97,14 +112,18 @@
             "link_aliases": "Aliases",
             "state_entity": "Entity for status information",
             "action_entity": "Entity for actions",
-            "private": "Private to this person"
+            "private": "Private to this person",
+            "confirm": "Actions need confirmation",
+            "admin_only": "Actions are for administrators only"
           },
           "data_description": {
             "link_name": "The agent uses this same name for status questions and action requests.",
             "link_aliases": "Optional. Enter alternate names separated by commas or on separate lines. They use the same status and action entities as the spoken name.",
             "state_entity": "For example, a binary sensor or temperature sensor.",
             "action_entity": "For example, a button or switch entity.",
-            "private": "When enabled, only this person can use either linked entity through this integration."
+            "private": "When enabled, only this person can use either linked entity through this integration.",
+            "confirm": "When enabled, every action on this device needs a spoken yes first.",
+            "admin_only": "When enabled, only Home Assistant administrators can use the action entity. Anyone can still ask for its status."
           }
         },
         "reconfigure": {
@@ -115,14 +134,18 @@
             "link_aliases": "Aliases",
             "state_entity": "Entity for status information",
             "action_entity": "Entity for actions",
-            "private": "Private to this person"
+            "private": "Private to this person",
+            "confirm": "Actions need confirmation",
+            "admin_only": "Actions are for administrators only"
           },
           "data_description": {
             "link_name": "The agent uses this same name for status questions and action requests.",
             "link_aliases": "Optional. Enter alternate names separated by commas or on separate lines. They use the same status and action entities as the spoken name.",
             "state_entity": "For example, a binary sensor or temperature sensor.",
             "action_entity": "For example, a button or switch entity.",
-            "private": "When enabled, only this person can use either linked entity through this integration."
+            "private": "When enabled, only this person can use either linked entity through this integration.",
+            "confirm": "When enabled, every action on this device needs a spoken yes first.",
+            "admin_only": "When enabled, only Home Assistant administrators can use the action entity. Anyone can still ask for its status."
           }
         }
       },
@@ -165,17 +188,21 @@
         "data": {
           "deny_unknown": "Deny unknown speakers",
           "unknown_address_as": "Address as for unknown speakers",
-          "refusal_lines": "Refusal lines (one per row)"
+          "refusal_lines": "Refusal lines (one per row)",
+          "min_confidence": "Minimum recognition confidence for changes"
         },
         "data_description": {
           "deny_unknown": "When on, only the people listed here can interact; everyone else, including requests with no user, is refused.",
-          "refusal_lines": "The agent answers a denied speaker with one of these lines."
+          "refusal_lines": "The agent answers a denied speaker with one of these lines.",
+          "min_confidence": "From 0 to 1. When Speaker Recognition scores a turn below this, every change made through the tools, including any device action, needs a spoken yes, and the agent first asks the speaker to confirm who they are. 0 turns this off. The score is read from Speaker Recognition's internal history; if it cannot be read, nothing changes."
         }
       },
       "preview": {
         "title": "Preview prompt",
         "description": "Choose Unknown speaker or a configured person to see the prompt text generated for that speaker.",
-        "data": { "user_id": "Person" }
+        "data": {
+          "user_id": "Person"
+        }
       },
       "preview_result": {
         "title": "Generated prompt",
@@ -201,6 +228,26 @@
         "user_id": {
           "name": "User ID",
           "description": "A Home Assistant user ID. Used when no person is given."
+        }
+      }
+    }
+  },
+  "issues": {
+    "stale_entities": {
+      "title": "{name} refers to entities that no longer exist",
+      "description": "The Speaker Recognition Tools settings for {name} include entities that are no longer in Home Assistant: {entities}. They are left out of the prompt and tools. Open Speaker Recognition Tools under Settings > Devices & services, and edit {name} to remove or replace them. Renamed entities are updated automatically."
+    },
+    "missing_account": {
+      "title": "{name} has no usable user account",
+      "description": "The Home Assistant user account for {name} was deleted or has no name, so the voice is now treated as an unknown speaker. Open Speaker Recognition Tools under Settings > Devices & services, and edit or delete {name}."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "last_speaker": {
+        "name": "Last speaker",
+        "state": {
+          "unknown_speaker": "Unknown speaker"
         }
       }
     }

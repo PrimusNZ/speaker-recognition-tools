@@ -30,16 +30,22 @@ from homeassistant.helpers import (
 
 from .const import (
     CONF_ADDRESS_AS,
+    CONF_ADMIN_ENTITIES,
+    CONF_CONFIRM_ENTITIES,
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
     CONF_LEGACY_ADDRESS_AS,
     CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_LINK_ACTION_ENTITY,
+    CONF_LINK_ADMIN_ONLY,
     CONF_LINK_ALIASES,
+    CONF_LINK_CONFIRM,
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
+    CONF_MIN_CONFIDENCE,
+    CONF_NOTIFY_SERVICE,
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_THIRD_PERSON_REFERENCE,
@@ -55,7 +61,8 @@ from .const import (
     TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
 )
-from .prompt import Person, build_device_prompt, build_person_prompt
+from .people import async_configured_people
+from .prompt import build_device_prompt, build_person_prompt
 
 _PREVIEW_UNKNOWN = "__unknown_speaker__"
 
@@ -175,6 +182,13 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                     CONF_REFUSAL_LINES,
                     default=opts.get(CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES),
                 ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+                vol.Required(
+                    CONF_MIN_CONFIDENCE, default=opts.get(CONF_MIN_CONFIDENCE, 0)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, max=1, step=0.01, mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
             }
         )
         return self.async_show_form(step_id="settings", data_schema=schema)
@@ -185,7 +199,7 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
         if user_input is not None:
             selected_user_id = user_input[CONF_USER_ID]
             user_id = None if selected_user_id == _PREVIEW_UNKNOWN else selected_user_id
-            people = await _configured_people(self.hass, self.config_entry)
+            people = await async_configured_people(self.hass, self.config_entry)
             if user_id is not None and not any(p.user_id == user_id for p in people):
                 return self.async_abort(reason="preview_person_missing")
             account = await self.hass.auth.async_get_user(user_id) if user_id else None
@@ -212,7 +226,7 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                     "prompt": prompt,
                 },
             )
-        people = await _configured_people(self.hass, self.config_entry)
+        people = await async_configured_people(self.hass, self.config_entry)
         if not people:
             return self.async_abort(reason="preview_no_people")
         return self.async_show_form(
@@ -279,7 +293,7 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
     disclaimer = ""
 
     if person_entry:
-        people = await _configured_people(hass, person_entry)
+        people = await async_configured_people(hass, person_entry)
         options = person_entry.options
         account, uses_session_account = await _preview_account(hass, context)
         person_prompt = build_person_prompt(
@@ -347,9 +361,9 @@ def _sample_device_prompt(hass) -> tuple[str, str]:
         and entity.device_id is not None
     }
     devices = [
-        device_registry.devices[device_id]
+        device
         for device_id in assist_device_ids
-        if device_id in device_registry.devices
+        if (device := device_registry.async_get(device_id)) is not None
     ]
     with_area = [device for device in devices if _device_area_id(hass, device)]
     candidates = with_area or devices
@@ -374,74 +388,57 @@ def _sample_device_prompt(hass) -> tuple[str, str]:
 
 def _device_area_id(hass, device) -> str | None:
     """Return a device's assigned or inherited area."""
-    return (
-        dr.async_get_effective_area_id(hass, device)
-        if hasattr(dr, "async_get_effective_area_id")
-        else device.area_id
+    return dr.async_get_effective_area_id(hass, device)
+
+
+_SUBSET_FIELDS = (
+    (CONF_PRIVATE_ENTITIES, "private_not_assigned"),
+    (CONF_CONFIRM_ENTITIES, "confirm_not_assigned"),
+    (CONF_ADMIN_ENTITIES, "admin_not_assigned"),
+)
+
+
+def _unassigned_subset(user_input: dict[str, Any]) -> tuple[str, str] | None:
+    """Return the first (field, error) whose entities are not all in the entity list."""
+    assigned = set(user_input.get(CONF_ENTITIES, []))
+    for field, error in _SUBSET_FIELDS:
+        if not set(user_input.get(field, [])) <= assigned:
+            return field, error
+    return None
+
+
+def _subset_data(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Optional settings, saved only when they are used."""
+    data: dict[str, Any] = {
+        field: list(user_input[field])
+        for field in (CONF_CONFIRM_ENTITIES, CONF_ADMIN_ENTITIES)
+        if user_input.get(field)
+    }
+    if notify := str(user_input.get(CONF_NOTIFY_SERVICE) or "").strip():
+        data[CONF_NOTIFY_SERVICE] = notify
+    return data
+
+
+def _notify_selector(hass) -> selector.SelectSelector:
+    """Offer the notify actions that exist now, and allow typing another."""
+    services = sorted(
+        f"notify.{name}"
+        for name in hass.services.async_services_for_domain("notify")
+        if name not in ("send_message", "persistent_notification")
+    )
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=services,
+            custom_value=True,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
     )
 
 
-async def _configured_people(hass, entry) -> list[Person]:
-    """Build the same per-person data used by the live prompt for preview."""
-    people = []
-    links_by_user: dict[str, list[tuple[str, str, str, bool, tuple[str, ...]]]] = {}
-    for sub in entry.subentries.values():
-        if sub.subentry_type == SUBENTRY_ENTITY_LINK:
-            data = sub.data
-            links_by_user.setdefault(data[CONF_USER_ID], []).append(
-                (
-                    data[CONF_LINK_NAME],
-                    data[CONF_LINK_STATE_ENTITY],
-                    data[CONF_LINK_ACTION_ENTITY],
-                    data.get(CONF_LINK_PRIVATE, False),
-                    tuple(data.get(CONF_LINK_ALIASES, [])),
-                )
-            )
-    for sub in entry.subentries.values():
-        if sub.subentry_type != SUBENTRY_SPEAKER:
-            continue
-        account = await hass.auth.async_get_user(sub.data[CONF_USER_ID])
-        name_parts = (account.name if account else "").split()
-        name = name_parts[0] if name_parts else None
-        address_as = (
-            sub.data.get(CONF_ADDRESS_AS, sub.data.get(CONF_LEGACY_ADDRESS_AS)) or ""
-        )
-        if not name:
-            continue
-        entities = tuple(
-            (
-                entity_id,
-                hass.states.get(entity_id).name
-                if hass.states.get(entity_id)
-                else entity_id,
-            )
-            for entity_id in sub.data.get(CONF_ENTITIES, [])
-        )
-        entity_aliases = tuple(
-            (entity_id, tuple(names))
-            for entity_id, names in sub.data.get(CONF_ENTITY_ALIASES, {}).items()
-        )
-        people.append(
-            Person(
-                sub.data[CONF_USER_ID],
-                name,
-                address_as,
-                entities,
-                frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
-                sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
-                entity_aliases,
-                tuple(links_by_user.get(sub.data[CONF_USER_ID], [])),
-                account.is_admin,
-            )
-        )
-    return people
-
-
-def _private_is_assigned(user_input: dict[str, Any]) -> bool:
-    """Private entities must also be in the person's entity list."""
-    return set(user_input.get(CONF_PRIVATE_ENTITIES, [])) <= set(
-        user_input.get(CONF_ENTITIES, [])
-    )
+def _valid_notify(user_input: dict[str, Any]) -> bool:
+    value = str(user_input.get(CONF_NOTIFY_SERVICE) or "").strip()
+    domain, _, service = value.partition(".")
+    return not value or (domain == "notify" and bool(service))
 
 
 def _parse_entity_aliases(
@@ -540,8 +537,10 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 errors[CONF_ENTITY_ALIASES] = "invalid_entity_aliases"
             elif user_input[CONF_USER_ID] in taken:
                 errors[CONF_USER_ID] = "already_configured"
-            elif not _private_is_assigned(user_input):
-                errors[CONF_PRIVATE_ENTITIES] = "private_not_assigned"
+            elif unassigned := _unassigned_subset(user_input):
+                errors[unassigned[0]] = unassigned[1]
+            elif not _valid_notify(user_input):
+                errors[CONF_NOTIFY_SERVICE] = "invalid_notify_service"
             else:
                 warnings = await _entity_issues(
                     self.hass, entry, user_input.get(CONF_ENTITIES, [])
@@ -575,6 +574,7 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                                 CONF_PRIVATE_ENTITIES, []
                             ),
                             **({CONF_ENTITY_ALIASES: aliases} if aliases else {}),
+                            **_subset_data(user_input),
                             **(
                                 {
                                     CONF_THIRD_PERSON_REFERENCE: user_input[
@@ -605,6 +605,13 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 vol.Optional(CONF_PRIVATE_ENTITIES): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
                 ),
+                vol.Optional(CONF_CONFIRM_ENTITIES): selector.EntitySelector(
+                    selector.EntitySelectorConfig(multiple=True)
+                ),
+                vol.Optional(CONF_ADMIN_ENTITIES): selector.EntitySelector(
+                    selector.EntitySelectorConfig(multiple=True)
+                ),
+                vol.Optional(CONF_NOTIFY_SERVICE): _notify_selector(self.hass),
             }
         )
         chosen = user_input.get(CONF_ENTITIES, []) if user_input else []
@@ -633,8 +640,10 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
         )
         if user_input is not None and aliases is None:
             errors[CONF_ENTITY_ALIASES] = "invalid_entity_aliases"
-        elif user_input is not None and not _private_is_assigned(user_input):
-            errors[CONF_PRIVATE_ENTITIES] = "private_not_assigned"
+        elif user_input is not None and (unassigned := _unassigned_subset(user_input)):
+            errors[unassigned[0]] = unassigned[1]
+        elif user_input is not None and not _valid_notify(user_input):
+            errors[CONF_NOTIFY_SERVICE] = "invalid_notify_service"
         elif user_input is not None:
             warnings = await _entity_issues(
                 self.hass,
@@ -669,6 +678,7 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                             CONF_PRIVATE_ENTITIES, []
                         ),
                         **({CONF_ENTITY_ALIASES: aliases} if aliases else {}),
+                        **_subset_data(user_input),
                         **(
                             {
                                 CONF_THIRD_PERSON_REFERENCE: user_input[
@@ -711,6 +721,24 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
                 ),
+                vol.Optional(
+                    CONF_CONFIRM_ENTITIES,
+                    default=subentry.data.get(CONF_CONFIRM_ENTITIES, []),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(multiple=True)
+                ),
+                vol.Optional(
+                    CONF_ADMIN_ENTITIES,
+                    default=subentry.data.get(CONF_ADMIN_ENTITIES, []),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(multiple=True)
+                ),
+                vol.Optional(
+                    CONF_NOTIFY_SERVICE,
+                    description={
+                        "suggested_value": subentry.data.get(CONF_NOTIFY_SERVICE)
+                    },
+                ): _notify_selector(self.hass),
                 vol.Optional(
                     CONF_ENTITY_ALIASES,
                     default=_entity_aliases_text(
@@ -810,6 +838,11 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                         CONF_LINK_STATE_ENTITY: state_entity,
                         CONF_LINK_ACTION_ENTITY: action_entity,
                         CONF_LINK_PRIVATE: user_input.get(CONF_LINK_PRIVATE, False),
+                        **{
+                            key: True
+                            for key in (CONF_LINK_CONFIRM, CONF_LINK_ADMIN_ONLY)
+                            if user_input.get(key)
+                        },
                     },
                 )
         schema = vol.Schema(
@@ -825,6 +858,12 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                 vol.Required(CONF_LINK_ACTION_ENTITY): selector.EntitySelector(),
                 vol.Optional(
                     CONF_LINK_PRIVATE, default=False
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_LINK_CONFIRM, default=False
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_LINK_ADMIN_ONLY, default=False
                 ): selector.BooleanSelector(),
             }
         )
@@ -862,6 +901,11 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                         CONF_LINK_STATE_ENTITY: state_entity,
                         CONF_LINK_ACTION_ENTITY: action_entity,
                         CONF_LINK_PRIVATE: user_input.get(CONF_LINK_PRIVATE, False),
+                        **{
+                            key: True
+                            for key in (CONF_LINK_CONFIRM, CONF_LINK_ADMIN_ONLY)
+                            if user_input.get(key)
+                        },
                     },
                 )
         schema = vol.Schema(
@@ -891,6 +935,14 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                 vol.Optional(
                     CONF_LINK_PRIVATE,
                     default=data.get(CONF_LINK_PRIVATE, False),
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_LINK_CONFIRM,
+                    default=data.get(CONF_LINK_CONFIRM, False),
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_LINK_ADMIN_ONLY,
+                    default=data.get(CONF_LINK_ADMIN_ONLY, False),
                 ): selector.BooleanSelector(),
             }
         )

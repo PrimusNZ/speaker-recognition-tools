@@ -343,6 +343,11 @@ async def test_person_api_tools_only_for_recognised_speakers(
         "delete_calendar_event",
         "get_person_location",
         "get_person_location_history",
+        "get_todo_items",
+        "add_todo_item",
+        "update_todo_item",
+        "remove_todo_item",
+        "send_message_to_person",
     ]
     assert (await _instance(hass, None)).tools == []
     assert (await _instance(hass, "no-such-user")).tools == []
