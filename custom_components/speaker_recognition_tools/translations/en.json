@@ -188,5 +188,21 @@
       "preview_person_missing": "That person is no longer configured.",
       "preview_complete": "Prompt preview closed."
     }
+  },
+  "services": {
+    "get_user_level": {
+      "name": "Get user level",
+      "description": "Returns a configured person's Home Assistant user level (User or Administrator) so a script can allow or block an action. Give a person, or a user ID, or leave both blank to use the user who started the script. An unknown or ambiguous person is never reported as an administrator.",
+      "fields": {
+        "person": {
+          "name": "Person",
+          "description": "A configured person's first name, address form or third-person reference."
+        },
+        "user_id": {
+          "name": "User ID",
+          "description": "A Home Assistant user ID. Used when no person is given."
+        }
+      }
+    }
   }
 }

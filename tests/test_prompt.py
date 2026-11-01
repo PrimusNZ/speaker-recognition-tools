@@ -223,6 +223,7 @@ def test_person_blocks_with_grouped_entities(prompt):
     )
     assert (
         "### James (Dad) [current speaker]\n"
+        "User Level: User\n"
         "Calendars:\n"
         " - calendar.james: James\n"
         "\n"
@@ -230,10 +231,12 @@ def test_person_blocks_with_grouped_entities(prompt):
         " - device_tracker.james_phone: James phone\n"
         "\n"
         "### Sarah (Mum)\n"
+        "User Level: User\n"
         "Calendars:\n"
         " - calendar.sarah: Sarah\n"
         "\n"
         "### Tom (Grandad)\n"
+        "User Level: User\n"
         "(no entities)"
     ) in text
 
@@ -420,7 +423,7 @@ def test_person_without_name_uses_address_as_heading(prompt):
         user_name="James",
         people=[P(prompt, "u1", "James", "Dad"), P(prompt, "u2", None, "Mum")],
     )
-    assert "### Mum\n(no entities)" in text
+    assert "### Mum\nUser Level: User\n(no entities)" in text
 
 
 def test_person_prompt_omits_entity_mappings_when_no_other_people(prompt):
@@ -431,7 +434,7 @@ def test_person_prompt_omits_entity_mappings_when_no_other_people(prompt):
 
 def test_no_entities_anywhere_omits_usage_rules(prompt):
     text = person(prompt, user_id="u1", user_name="James", people=people(prompt))
-    assert "### Sarah (Mum)\n(no entities)" in text
+    assert "### Sarah (Mum)\nUser Level: User\n(no entities)" in text
     assert "use only the entities listed" not in text
 
 
@@ -515,7 +518,7 @@ def test_person_with_only_private_entities_shows_none_to_others(prompt):
         ),
     ]
     text = person(prompt, user_id="u1", user_name="James", people=ps)
-    assert "### Sarah (Mum)\n(no entities)" in text
+    assert "### Sarah (Mum)\nUser Level: User\n(no entities)" in text
     assert "calendar.diary" not in text
 
 
@@ -578,3 +581,11 @@ def test_device_prompt_omits_unknown_area(prompt):
         device_id=None, device_name=None, area_name="Lounge"
     )
     assert "area" not in text and "is not known" in text
+
+
+def test_entity_mapping_intro_sentences_are_separated_by_a_space(prompt):
+    text = person(
+        prompt, user_id="u1", user_name="James", people=people(prompt, entities=True)
+    )
+    assert "the current speaker. The first alias shown" in text
+    assert "speaker.The" not in text

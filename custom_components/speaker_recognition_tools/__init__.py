@@ -5,9 +5,17 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
+from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_TOOL_TYPE, TOOL_TYPE_PERSON
 from .llm_api import SpeakingDeviceAPI, SpeakingPersonAPI
+from .services import async_setup_services
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the actions that scripts can call."""
+    async_setup_services(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

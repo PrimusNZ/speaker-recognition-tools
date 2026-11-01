@@ -3,6 +3,17 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.0] - 2026-11-02
+
+### Added
+
+- Include each configured person's Home Assistant user level in the prompt mappings.
+- Add the `speaker_recognition_tools.get_user_level` action, which returns a person's user level (`User` or `Administrator`) as a response so scripts and automations can allow or block actions by level. Unknown or ambiguous people are never reported as administrators.
+
+### Fixed
+
+- Add the missing space between the "current speaker" sentence and the alias guidance in the entity mappings intro.
+
 ## [0.6.0.5] - 2026-10-27
 
 ### Fixed

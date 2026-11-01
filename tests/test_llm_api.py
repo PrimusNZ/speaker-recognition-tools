@@ -35,9 +35,20 @@ from custom_components.speaker_recognition_tools.const import (
 )
 
 
-async def _setup(hass: HomeAssistant, deny: bool = False, linked: bool = False):
-    james = await hass.auth.async_create_user("James", group_ids=["system-users"])
-    sarah = await hass.auth.async_create_user("Sarah", group_ids=["system-users"])
+async def _setup(
+    hass: HomeAssistant,
+    deny: bool = False,
+    linked: bool = False,
+    admin_users: tuple[str, ...] = (),
+):
+    james = await hass.auth.async_create_user(
+        "James",
+        group_ids=["system-admin" if "James" in admin_users else "system-users"],
+    )
+    sarah = await hass.auth.async_create_user(
+        "Sarah",
+        group_ids=["system-admin" if "Sarah" in admin_users else "system-users"],
+    )
     hass.states.async_set("calendar.james", "off", {"friendly_name": "James Calendar"})
     hass.states.async_set("calendar.sarah", "off", {"friendly_name": "Sarah Calendar"})
     entry = MockConfigEntry(
@@ -122,15 +133,30 @@ async def test_prompt_assigns_entities_to_each_person(hass: HomeAssistant) -> No
         'answer exactly "Your form of address is Dad, and your name is James."' in text
     )
     assert "## ENTITY MAPPINGS" in text
-    assert (
-        "### James (Dad) [current speaker]\nCalendars:\n - calendar.james: James Calendar"
-        in text
-    )
-    assert (
-        "### Sarah (Mum)\nCalendars:\n"
-        " - calendar.sarah: Sarah Calendar\n"
-        " - calendar.gone"
-    ) in text
+    assert "### James (Dad) [current speaker]" in text
+    assert "User Level: User" in text
+    assert " - calendar.james: James Calendar" in text
+    assert "### Sarah (Mum)" in text
+    assert " - calendar.sarah: Sarah Calendar" in text
+    assert " - calendar.gone" in text
+
+
+async def test_prompt_includes_user_level_for_configured_speakers(
+    hass: HomeAssistant,
+) -> None:
+    james = await _setup(hass, admin_users=("James",))
+
+    text = await _prompt(hass, james.id)
+
+    james_block = text.split("### James (Dad) [current speaker]", 1)[1].split(
+        "\n\n### ", 1
+    )[0]
+    sarah_block = text.split("### Sarah (Mum)", 1)[1].split("\n\n### ", 1)[0]
+    assert "User Level: Administrator" in james_block
+    assert "User Level: User" in sarah_block
+
+    unknown_text = await _prompt(hass, None)
+    assert "User Level:" not in unknown_text
 
 
 async def test_linked_device_is_injected_with_shared_status_and_action_name(

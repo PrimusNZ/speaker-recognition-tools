@@ -431,6 +431,7 @@ async def _configured_people(hass, entry) -> list[Person]:
                 sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
                 entity_aliases,
                 tuple(links_by_user.get(sub.data[CONF_USER_ID], [])),
+                account.is_admin,
             )
         )
     return people

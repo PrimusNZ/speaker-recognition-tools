@@ -24,10 +24,11 @@ class Person(NamedTuple):
     third_person_reference: str | None = None
     entity_aliases: tuple[tuple[str, tuple[str, ...]], ...] = ()
     entity_links: tuple[tuple[str, str, str, bool, tuple[str, ...]], ...] = ()
+    is_admin: bool = False
 
     @property
     def direct_address(self) -> str:
-        """Configured configured address form, falling back to the person's first name."""
+        """Configured address form, falling back to the person's first name."""
         return self.address_as or self.name or "Unknown person"
 
     @property
@@ -91,6 +92,7 @@ def _line(
 def _person_block(person: Person, current: bool) -> str:
     heading = _label(person.name, person.direct_address)
     block_heading = f"### {heading}{' [current speaker]' if current else ''}"
+    block_heading += f"\nUser Level: {'Administrator' if person.is_admin else 'User'}"
     if person.third_person_form != person.direct_address:
         block_heading += f"\nThird-person reference: {person.third_person_form}"
     # Other people's private entities are never shown.
@@ -183,7 +185,7 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
     intro += f' "my", "me" or "I" means {me.direct_address}, the current speaker.'
     if any(p.entities or p.entity_links for p in people):
         intro += (
-            "The first alias shown for an entity is its preferred name; any other "
+            " The first alias shown for an entity is its preferred name; any other "
             "aliases shown for it are alternate names for that same entity. A linked "
             "device's listed alternate names refer to the same device and work for "
             "both status and action requests. When a "
