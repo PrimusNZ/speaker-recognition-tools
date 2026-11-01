@@ -19,28 +19,32 @@ from homeassistant.helpers.start import async_at_started
 
 from .const import (
     CONF_ADMIN_ENTITIES,
+    CONF_CALENDARS,
     CONF_CONFIRM_ENTITIES,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
     CONF_LINK_ACTION_ENTITY,
     CONF_LINK_STATE_ENTITY,
     CONF_NOTIFY_SERVICE,
+    CONF_PERSON_ENTITY,
     CONF_PRIVATE_ENTITIES,
-    CONF_USER_ID,
+    CONF_TODO_LIST,
     DOMAIN,
     SUBENTRY_ENTITY_LINK,
     SUBENTRY_SPEAKER,
 )
-from .people import first_name
+from .people import first_name, link_title, speaker_title, speaker_user_id
 
 ISSUE_STALE_ENTITIES = "stale_entities"
 ISSUE_MISSING_ACCOUNT = "missing_account"
+ISSUE_MISSING_PERSON = "missing_person"
 _CHECK_DELAY = 2.0  # seconds; registry changes often arrive in bursts
 
 # Settings keys that hold entity ids, per subentry type.
 LIST_KEYS: dict[str, tuple[str, ...]] = {
     SUBENTRY_SPEAKER: (
         CONF_ENTITIES,
+        CONF_CALENDARS,
         CONF_PRIVATE_ENTITIES,
         CONF_CONFIRM_ENTITIES,
         CONF_ADMIN_ENTITIES,
@@ -48,7 +52,7 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
     SUBENTRY_ENTITY_LINK: (),
 }
 SINGLE_KEYS: dict[str, tuple[str, ...]] = {
-    SUBENTRY_SPEAKER: (),
+    SUBENTRY_SPEAKER: (CONF_PERSON_ENTITY, CONF_TODO_LIST),
     SUBENTRY_ENTITY_LINK: (CONF_LINK_STATE_ENTITY, CONF_LINK_ACTION_ENTITY),
 }
 
@@ -109,14 +113,28 @@ def _issue_id(kind: str, entry: ConfigEntry, sub: ConfigSubentry) -> str:
 async def async_check_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Create or clear this entry's Repairs issues to match its current settings."""
     wanted: dict[str, tuple[str, dict[str, str]]] = {}
-    for sub in entry.subentries.values():
+    for sub in list(entry.subentries.values()):
         if sub.subentry_type == SUBENTRY_SPEAKER:
-            account = await hass.auth.async_get_user(sub.data[CONF_USER_ID])
+            # Keep the listed name in step with the person entity's name.
+            if (title := await speaker_title(hass, sub.data)) != sub.title:
+                hass.config_entries.async_update_subentry(entry, sub, title=title)
+                sub = entry.subentries[sub.subentry_id]
+            account = await hass.auth.async_get_user(speaker_user_id(hass, sub.data))
             if account is None or not first_name(account.name):
                 wanted[_issue_id(ISSUE_MISSING_ACCOUNT, entry, sub)] = (
                     ISSUE_MISSING_ACCOUNT,
                     {"name": sub.title},
                 )
+            if not sub.data.get(CONF_PERSON_ENTITY):
+                wanted[_issue_id(ISSUE_MISSING_PERSON, entry, sub)] = (
+                    ISSUE_MISSING_PERSON,
+                    {"name": sub.title},
+                )
+        if sub.subentry_type == SUBENTRY_ENTITY_LINK and (
+            title := await link_title(hass, entry, sub.data)
+        ) != sub.title:
+            hass.config_entries.async_update_subentry(entry, sub, title=title)
+            sub = entry.subentries[sub.subentry_id]
         missing = sorted(e for e in subentry_entity_ids(sub) if is_missing(hass, e))
         if (
             notify := sub.data.get(CONF_NOTIFY_SERVICE)

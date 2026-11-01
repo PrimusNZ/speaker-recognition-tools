@@ -62,13 +62,13 @@ def todo(hass) -> FakeTodo:
 
 
 def _household(users, speaker_name="James"):
-    james = Person(users["James"].id, "James", "Dad", (("todo.james", "Jobs"),))
+    james = Person(users["James"].id, "James", "Dad", todo_list="todo.james")
     sarah = Person(
         users["Sarah"].id,
         "Sarah",
         "Mum",
-        (("todo.sarah", "Errands"), ("todo.sarah_private", "Secret")),
-        frozenset({"todo.sarah_private"}),
+        todo_list="todo.sarah_private",
+        todo_private=True,
     )
     speaker = james if speaker_name == "James" else sarah
     return tool_base.Household([james, sarah], speaker)
@@ -104,7 +104,7 @@ async def test_reads_open_items_on_the_speakers_list(hass, users, todo) -> None:
     data, error = await _call(hass, users, todo_tools.GetTodoItemsTool)
     assert not error
     (only,) = data["lists"]
-    assert only["list"] == "Jobs"
+    assert only["list"] == "your to-do list"
     assert [i["summary"] for i in only["items"]] == ["Renew licence"]
 
 
@@ -113,23 +113,40 @@ async def test_reads_completed_items_when_asked(hass, users, todo) -> None:
     assert [i["summary"] for i in data["lists"][0]["items"]] == ["Call plumber"]
 
 
-async def test_other_persons_private_list_is_hidden(hass, users, todo) -> None:
+async def test_other_persons_private_list_is_refused(hass, users, todo) -> None:
     data, error = await _call(hass, users, todo_tools.GetTodoItemsTool, people=["Mum"])
-    assert not error
-    assert [entry["entity_id"] for entry in data["lists"]] == ["todo.sarah"]
+    assert error
+    assert data["lists"] == []
+    assert data["problems"] == [
+        {
+            "person": "Mum",
+            "problem": "private",
+            "message": "Mum's to-do list is private.",
+        }
+    ]
+    assert "todo.sarah_private" not in str(data)
 
 
-async def test_owner_with_two_lists_is_asked_which(hass, users, todo) -> None:
+async def test_lists_are_named_by_whose_they_are(hass, users, todo) -> None:
     data, error = await _call(
+        hass, users, todo_tools.GetTodoItemsTool, speaker="Sarah", people=["me", "Dad"]
+    )
+    assert not error
+    assert [entry["list"] for entry in data["lists"]] == [
+        "your to-do list",
+        "Dad's to-do list",
+    ]
+
+
+async def test_owner_can_change_their_private_list(hass, users, todo) -> None:
+    result, error = await _confirmed(
         hass, users, todo_tools.AddTodoItemTool, speaker="Sarah", item="Pay rates"
     )
-    assert error
-    (problem,) = data["problems"]
-    assert problem["problem"] == "choose_todo_list"
-    assert {o["entity_id"] for o in problem["options"]} == {
-        "todo.sarah",
-        "todo.sarah_private",
-    }
+    assert not error
+    assert result["list"] == "your to-do list"
+    assert todo.calls == [
+        ("add_item", {"entity_id": "todo.sarah_private", "item": "Pay rates"})
+    ]
 
 
 async def test_person_without_a_list_is_told_so(hass, users, todo) -> None:
@@ -143,7 +160,7 @@ async def test_person_without_a_list_is_told_so(hass, users, todo) -> None:
     )
     assert result.error
     assert result.data["problems"][0]["problem"] == "no_todo_list"
-    assert result.data["problems"][0]["message"] == "Dad has no to-do list assigned."
+    assert result.data["problems"][0]["message"] == "Dad has no to-do list."
 
 
 async def test_add_needs_confirmation_then_adds(hass, users, todo) -> None:
@@ -153,7 +170,7 @@ async def test_add_needs_confirmation_then_adds(hass, users, todo) -> None:
     assert not error
     assert preview["preview"] == {
         "person": "Dad",
-        "list": "Jobs",
+        "list": "your to-do list",
         "item": "Wash car",
         "due_date": "2026-11-03",
     }
@@ -179,11 +196,10 @@ async def test_cannot_add_to_someone_elses_private_list(hass, users, todo) -> No
         todo_tools.AddTodoItemTool,
         item="Peek",
         person="Mum",
-        list="todo.sarah_private",
     )
     assert error
     assert todo.calls == []
-    assert any(p["problem"] == "todo_list_not_available" for p in data["problems"])
+    assert [p["problem"] for p in data["problems"]] == ["private"]
 
 
 async def test_complete_an_item_by_its_text(hass, users, todo) -> None:
@@ -230,4 +246,4 @@ async def test_list_without_the_feature_is_refused(hass, users, todo) -> None:
     hass.states.async_set("todo.james", "1", {"supported_features": 0})
     data, error = await _call(hass, users, todo_tools.AddTodoItemTool, item="Wash car")
     assert error
-    assert "does not accept new items" in data["error"]
+    assert data["error"] == "Your to-do list does not accept new items."

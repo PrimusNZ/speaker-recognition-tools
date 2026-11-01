@@ -82,7 +82,7 @@ async def test_person_found_by_name_address_form_or_third_person(
     assert result["is_admin"] is True
     assert result["configured"] is True
     assert result["user_id"] == users["admin"].id
-    assert result["name"] == "Alex"
+    assert result["name"] == "Alex Example"
     assert result["address_as"] == "Boss"
 
 
@@ -143,7 +143,7 @@ async def test_user_id_of_an_account_that_is_not_a_configured_person(
     assert result["found"] is True
     assert result["configured"] is False
     assert result["level"] == "Administrator"
-    assert result["name"] == "Robin"
+    assert result["name"] == "Robin Visitor"
     assert result["address_as"] == "Unknown Person"
 
 
@@ -158,8 +158,8 @@ async def test_unknown_user_id(hass, users) -> None:
 async def test_defaults_to_the_user_who_started_the_script(hass, users) -> None:
     admin = await call(hass, user=users["admin"])
     member = await call(hass, user=users["member"])
-    assert admin["is_admin"] is True and admin["name"] == "Alex"
-    assert member["is_admin"] is False and member["name"] == "Sam"
+    assert admin["is_admin"] is True and admin["name"] == "Alex Example"
+    assert member["is_admin"] is False and member["name"] == "Sam Sample"
 
 
 async def test_no_user_in_context_is_not_found(hass, users) -> None:
@@ -170,14 +170,12 @@ async def test_no_user_in_context_is_not_found(hass, users) -> None:
     assert result["address_as"] == "Unknown Person"
 
 
-async def test_only_first_names_are_returned(hass, users) -> None:
+async def test_full_names_are_returned_outside_the_prompt(hass, users) -> None:
     results = [
         await call(hass, {"person": "Alex"}),
         await call(hass, {"user_id": users["outsider"].id}),
     ]
-    for result in results:
-        text = str(result)
-        assert "Example" not in text and "Visitor" not in text
+    assert [r["name"] for r in results] == ["Alex Example", "Robin Visitor"]
 
 
 async def test_responds_without_any_configured_people(hass: HomeAssistant) -> None:
@@ -218,7 +216,7 @@ async def test_unknown_people_use_the_configured_unknown_address_form(
     for name, result in results.items():
         assert result["address_as"] == "Stranger", name
     assert results["not_configured"]["configured"] is False
-    assert results["not_configured"]["name"] == "Robin"
+    assert results["not_configured"]["name"] == "Robin Visitor"
     # A configured person keeps their own address form.
     assert (await call(hass, {"person": "Sam"}))["address_as"] == "Mum"
 

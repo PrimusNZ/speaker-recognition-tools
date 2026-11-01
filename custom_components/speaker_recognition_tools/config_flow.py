@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import html
 import random
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -31,6 +33,7 @@ from homeassistant.helpers import (
 from .const import (
     CONF_ADDRESS_AS,
     CONF_ADMIN_ENTITIES,
+    CONF_CALENDARS,
     CONF_CONFIRM_ENTITIES,
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
@@ -44,11 +47,15 @@ from .const import (
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
+    CONF_LOCATION_PRIVATE,
     CONF_MIN_CONFIDENCE,
     CONF_NOTIFY_SERVICE,
+    CONF_PERSON_ENTITY,
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_THIRD_PERSON_REFERENCE,
+    CONF_TODO_LIST,
+    CONF_TODO_PRIVATE,
     CONF_TOOL_TYPE,
     CONF_UNKNOWN_ADDRESS_AS,
     CONF_USER_ID,
@@ -61,7 +68,17 @@ from .const import (
     TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
 )
-from .people import async_configured_people
+from .people import (
+    async_configured_people,
+    is_calendar,
+    is_person,
+    is_todo,
+    link_title,
+    person_user_id,
+    speaker_name,
+    speaker_title,
+    todo_settings,
+)
 from .prompt import build_device_prompt, build_person_prompt
 
 _PREVIEW_UNKNOWN = "__unknown_speaker__"
@@ -71,6 +88,7 @@ class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
     """Pick a prompt addition to add, or preview the integration prompt."""
 
     VERSION = 1
+    MINOR_VERSION = 3  # 2: built on person entities; 3: calendars field
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -398,9 +416,21 @@ _SUBSET_FIELDS = (
 )
 
 
+def _assigned(user_input: Mapping[str, Any]) -> list[str]:
+    """The person's entities and calendars, which aliases and subsets may name."""
+    return [*user_input.get(CONF_ENTITIES, []), *user_input.get(CONF_CALENDARS, [])]
+
+
 def _unassigned_subset(user_input: dict[str, Any]) -> tuple[str, str] | None:
-    """Return the first (field, error) whose entities are not all in the entity list."""
-    assigned = set(user_input.get(CONF_ENTITIES, []))
+    """Return the first (field, error) whose entities are not all assigned."""
+    entities = user_input.get(CONF_ENTITIES, [])
+    if any(is_todo(entity_id) for entity_id in entities):
+        return CONF_ENTITIES, "todo_in_entities"
+    if any(is_person(entity_id) for entity_id in entities):
+        return CONF_ENTITIES, "person_in_entities"
+    if any(is_calendar(entity_id) for entity_id in entities):
+        return CONF_ENTITIES, "calendar_in_entities"
+    assigned = set(_assigned(user_input))
     for field, error in _SUBSET_FIELDS:
         if not set(user_input.get(field, [])) <= assigned:
             return field, error
@@ -416,7 +446,69 @@ def _subset_data(user_input: dict[str, Any]) -> dict[str, Any]:
     }
     if notify := str(user_input.get(CONF_NOTIFY_SERVICE) or "").strip():
         data[CONF_NOTIFY_SERVICE] = notify
+    if user_input.get(CONF_LOCATION_PRIVATE):
+        data[CONF_LOCATION_PRIVATE] = True
+    if calendars := list(user_input.get(CONF_CALENDARS, [])):
+        data[CONF_CALENDARS] = calendars
+    if todo := user_input.get(CONF_TODO_LIST):
+        data[CONF_TODO_LIST] = todo
+        if user_input.get(CONF_TODO_PRIVATE):
+            data[CONF_TODO_PRIVATE] = True
     return data
+
+
+def _person_header(hass, person_entity: str | None, fallback: str) -> str:
+    """The person's name as a heading, for the top of their edit form."""
+    state = hass.states.get(person_entity) if person_entity else None
+    name = html.escape(state.name if state else fallback)
+    return f"<h2>{name}</h2>"
+
+
+def _todo_selector() -> selector.EntitySelector:
+    return selector.EntitySelector(selector.EntitySelectorConfig(domain="todo"))
+
+
+def _calendar_selector() -> selector.EntitySelector:
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain="calendar", multiple=True)
+    )
+
+
+def _without_todo_lists(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Saved settings as the form shows them now.
+
+    Older setups kept to-do lists, calendars and the person entity in the entity
+    list. Calendars move to the Calendars field; to-do lists and the person
+    entity have fields of their own and are left out of the lists.
+    """
+    cleaned = dict(data)
+    # Calendars saved in the entity list move to the Calendars field.
+    cleaned[CONF_CALENDARS] = list(
+        dict.fromkeys(
+            [
+                *data.get(CONF_CALENDARS, []),
+                *(e for e in data.get(CONF_ENTITIES, []) if is_calendar(e)),
+            ]
+        )
+    )
+    cleaned[CONF_ENTITIES] = [
+        e for e in data.get(CONF_ENTITIES, []) if not is_calendar(e)
+    ]
+    for key in (
+        CONF_ENTITIES,
+        CONF_PRIVATE_ENTITIES,
+        CONF_CONFIRM_ENTITIES,
+        CONF_ADMIN_ENTITIES,
+    ):
+        cleaned[key] = [
+            e for e in cleaned.get(key, []) if not is_todo(e) and not is_person(e)
+        ]
+    cleaned[CONF_ENTITY_ALIASES] = {
+        e: names
+        for e, names in (data.get(CONF_ENTITY_ALIASES) or {}).items()
+        if not is_todo(e) and not is_person(e)
+    }
+    return cleaned
 
 
 def _notify_selector(hass) -> selector.SelectSelector:
@@ -493,29 +585,45 @@ def _parse_link_aliases(text: str, primary_name: str) -> tuple[str, ...]:
 class SpeakerSubentryFlow(ConfigSubentryFlow):
     """Add or change one person, including their optional configured address form."""
 
-    async def _user_options(self) -> list[selector.SelectOptionDict]:
-        users = await self.hass.auth.async_get_users()
-        return [
-            selector.SelectOptionDict(value=u.id, label=u.name or u.id)
-            for u in users
-            if not u.system_generated and u.is_active
-        ]
+    async def _person_options(
+        self, user_id: str | None = None
+    ) -> list[selector.SelectOptionDict]:
+        """Person entities linked to an active user account, or to user_id."""
+        options = []
+        for state in sorted(
+            self.hass.states.async_all("person"), key=lambda s: s.name.casefold()
+        ):
+            linked = person_user_id(self.hass, state.entity_id)
+            user = await self.hass.auth.async_get_user(linked) if linked else None
+            if (
+                user
+                and user.is_active
+                and not user.system_generated
+                and user_id in (None, user.id)
+            ):
+                options.append(
+                    selector.SelectOptionDict(
+                        value=state.entity_id,
+                        label=f"{state.name} ({state.entity_id})",
+                    )
+                )
+        return options
 
-    async def _subentry_title(
-        self, user_id: str, address_as: str, entities: list[str], private: list[str]
-    ) -> str:
-        """Return the Home Assistant subentry label."""
-        user = await self.hass.auth.async_get_user(user_id)
-        name = user.name if user else user_id
-        count = len(entities)
-        amount = (
-            "no entities"
-            if not count
-            else f"{count} {'entity' if count == 1 else 'entities'}"
+    async def _create_person(
+        self, data: dict[str, Any], unique_id: str
+    ) -> SubentryFlowResult:
+        return self.async_create_entry(
+            title=await speaker_title(self.hass, data),
+            data=data,
+            unique_id=unique_id,
         )
-        if private:
-            amount += f", {len(private)} private"
-        return f"{f'{name}: {address_as}' if address_as else name} ({amount})"
+
+    async def _update_person(
+        self, entry, subentry, data: dict[str, Any]
+    ) -> SubentryFlowResult:
+        return self.async_update_and_abort(
+            entry, subentry, title=await speaker_title(self.hass, data), data=data
+        )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -528,26 +636,42 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                 sub.data[CONF_USER_ID]
                 for sub in entry.subentries.values()
                 if sub.subentry_type == SUBENTRY_SPEAKER
+            } | {
+                sub.data.get(CONF_PERSON_ENTITY)
+                for sub in entry.subentries.values()
+                if sub.subentry_type == SUBENTRY_SPEAKER
+            }
+            # The account always comes from the chosen person entity.
+            user_input = {
+                **user_input,
+                CONF_USER_ID: person_user_id(
+                    self.hass, user_input[CONF_PERSON_ENTITY]
+                ),
             }
             aliases = _parse_entity_aliases(
                 user_input.get(CONF_ENTITY_ALIASES, ""),
-                user_input.get(CONF_ENTITIES, []),
+                _assigned(user_input),
             )
             if aliases is None:
                 errors[CONF_ENTITY_ALIASES] = "invalid_entity_aliases"
-            elif user_input[CONF_USER_ID] in taken:
-                errors[CONF_USER_ID] = "already_configured"
+            elif not user_input[CONF_USER_ID]:
+                errors[CONF_PERSON_ENTITY] = "person_without_account"
+            elif (
+                user_input[CONF_USER_ID] in taken
+                or user_input[CONF_PERSON_ENTITY] in taken
+            ):
+                errors[CONF_PERSON_ENTITY] = "already_configured"
             elif unassigned := _unassigned_subset(user_input):
                 errors[unassigned[0]] = unassigned[1]
             elif not _valid_notify(user_input):
                 errors[CONF_NOTIFY_SERVICE] = "invalid_notify_service"
             else:
                 warnings = await _entity_issues(
-                    self.hass, entry, user_input.get(CONF_ENTITIES, [])
+                    self.hass, entry, _assigned(user_input)
                 )
                 warning_key = (
                     user_input[CONF_USER_ID],
-                    tuple(sorted(user_input.get(CONF_ENTITIES, []))),
+                    tuple(sorted(_assigned(user_input))),
                     warnings,
                 )
                 if (
@@ -559,14 +683,9 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                     errors["base"] = "entity_warnings_acknowledge"
                 else:
                     address_as = user_input.get(CONF_ADDRESS_AS, "").strip()
-                    return self.async_create_entry(
-                        title=await self._subentry_title(
-                            user_input[CONF_USER_ID],
-                            address_as,
-                            user_input.get(CONF_ENTITIES, []),
-                            user_input.get(CONF_PRIVATE_ENTITIES, []),
-                        ),
+                    return await self._create_person(
                         data={
+                            CONF_PERSON_ENTITY: user_input[CONF_PERSON_ENTITY],
                             CONF_USER_ID: user_input[CONF_USER_ID],
                             CONF_ADDRESS_AS: address_as,
                             CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
@@ -589,32 +708,35 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                         },
                         unique_id=user_input[CONF_USER_ID],
                     )
+        multiple = selector.EntitySelectorConfig(multiple=True)
         schema = vol.Schema(
             {
-                vol.Required(CONF_USER_ID): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=await self._user_options())
+                vol.Required(CONF_PERSON_ENTITY): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=await self._person_options()
+                    )
+                ),
+                vol.Optional(CONF_LOCATION_PRIVATE, default=False): (
+                    selector.BooleanSelector()
+                ),
+                vol.Optional(CONF_TODO_PRIVATE, default=False): (
+                    selector.BooleanSelector()
                 ),
                 vol.Optional(CONF_ADDRESS_AS): selector.TextSelector(),
                 vol.Optional(CONF_THIRD_PERSON_REFERENCE): selector.TextSelector(),
-                vol.Optional(CONF_ENTITIES): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                ),
+                vol.Optional(CONF_ENTITIES): selector.EntitySelector(multiple),
                 vol.Optional(CONF_ENTITY_ALIASES): selector.TextSelector(
                     selector.TextSelectorConfig(multiline=True)
                 ),
-                vol.Optional(CONF_PRIVATE_ENTITIES): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                ),
-                vol.Optional(CONF_CONFIRM_ENTITIES): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                ),
-                vol.Optional(CONF_ADMIN_ENTITIES): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                ),
+                vol.Optional(CONF_TODO_LIST): _todo_selector(),
+                vol.Optional(CONF_CALENDARS): _calendar_selector(),
+                vol.Optional(CONF_PRIVATE_ENTITIES): selector.EntitySelector(multiple),
+                vol.Optional(CONF_CONFIRM_ENTITIES): selector.EntitySelector(multiple),
+                vol.Optional(CONF_ADMIN_ENTITIES): selector.EntitySelector(multiple),
                 vol.Optional(CONF_NOTIFY_SERVICE): _notify_selector(self.hass),
             }
         )
-        chosen = user_input.get(CONF_ENTITIES, []) if user_input else []
+        chosen = _assigned(user_input) if user_input else []
         issues = warnings or await _entity_issues(self.hass, entry, chosen)
         return self.async_show_form(
             step_id="user",
@@ -633,7 +755,7 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
         aliases = (
             _parse_entity_aliases(
                 user_input.get(CONF_ENTITY_ALIASES, ""),
-                user_input.get(CONF_ENTITIES, []),
+                _assigned(user_input),
             )
             if user_input is not None
             else {}
@@ -648,10 +770,10 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
             warnings = await _entity_issues(
                 self.hass,
                 entry,
-                user_input.get(CONF_ENTITIES, []),
+                _assigned(user_input),
                 exclude_user_id=subentry.data[CONF_USER_ID],
             )
-            warning_key = (tuple(sorted(user_input.get(CONF_ENTITIES, []))), warnings)
+            warning_key = (tuple(sorted(_assigned(user_input))), warnings)
             if (
                 warnings
                 and getattr(self, "_acknowledged_entity_warning", None) != warning_key
@@ -661,16 +783,18 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
             else:
                 address_as = user_input.get(CONF_ADDRESS_AS, "").strip()
                 user_id = subentry.data[CONF_USER_ID]
-                return self.async_update_and_abort(
+                return await self._update_person(
                     entry,
                     subentry,
-                    title=await self._subentry_title(
-                        user_id,
-                        address_as,
-                        user_input.get(CONF_ENTITIES, []),
-                        user_input.get(CONF_PRIVATE_ENTITIES, []),
-                    ),
                     data={
+                        **(
+                            {CONF_PERSON_ENTITY: person_entity}
+                            if (
+                                person_entity := subentry.data.get(CONF_PERSON_ENTITY)
+                                or user_input.get(CONF_PERSON_ENTITY)
+                            )
+                            else {}
+                        ),
                         CONF_USER_ID: user_id,
                         CONF_ADDRESS_AS: address_as,
                         CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
@@ -690,8 +814,34 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                         ),
                     },
                 )
+        saved = _without_todo_lists(subentry.data)
+        todo_list, todo_private = todo_settings(subentry.data)
+        # Someone saved before person entities were used, with no matching
+        # person at the time, picks theirs here.
+        person_field = (
+            {}
+            if subentry.data.get(CONF_PERSON_ENTITY)
+            else {
+                vol.Optional(CONF_PERSON_ENTITY): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=await self._person_options(
+                            subentry.data[CONF_USER_ID]
+                        )
+                    )
+                )
+            }
+        )
+        multiple = selector.EntitySelectorConfig(multiple=True)
         schema = vol.Schema(
             {
+                **person_field,
+                vol.Optional(
+                    CONF_LOCATION_PRIVATE,
+                    default=subentry.data.get(CONF_LOCATION_PRIVATE, False),
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_TODO_PRIVATE, default=todo_private
+                ): selector.BooleanSelector(),
                 vol.Optional(
                     CONF_ADDRESS_AS,
                     description={
@@ -710,48 +860,40 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
                     },
                 ): selector.TextSelector(),
                 vol.Optional(
-                    CONF_ENTITIES,
-                    default=subentry.data.get(CONF_ENTITIES, []),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                ),
+                    CONF_ENTITIES, default=saved.get(CONF_ENTITIES, [])
+                ): selector.EntitySelector(multiple),
+                vol.Optional(
+                    CONF_ENTITY_ALIASES,
+                    default=_entity_aliases_text(saved.get(CONF_ENTITY_ALIASES)),
+                ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+                vol.Optional(
+                    CONF_TODO_LIST,
+                    description={"suggested_value": todo_list},
+                ): _todo_selector(),
+                vol.Optional(
+                    CONF_CALENDARS, default=saved.get(CONF_CALENDARS, [])
+                ): _calendar_selector(),
                 vol.Optional(
                     CONF_PRIVATE_ENTITIES,
-                    default=subentry.data.get(CONF_PRIVATE_ENTITIES, []),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                ),
+                    default=saved.get(CONF_PRIVATE_ENTITIES, []),
+                ): selector.EntitySelector(multiple),
                 vol.Optional(
                     CONF_CONFIRM_ENTITIES,
-                    default=subentry.data.get(CONF_CONFIRM_ENTITIES, []),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                ),
+                    default=saved.get(CONF_CONFIRM_ENTITIES, []),
+                ): selector.EntitySelector(multiple),
                 vol.Optional(
                     CONF_ADMIN_ENTITIES,
-                    default=subentry.data.get(CONF_ADMIN_ENTITIES, []),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                ),
+                    default=saved.get(CONF_ADMIN_ENTITIES, []),
+                ): selector.EntitySelector(multiple),
                 vol.Optional(
                     CONF_NOTIFY_SERVICE,
                     description={
                         "suggested_value": subentry.data.get(CONF_NOTIFY_SERVICE)
                     },
                 ): _notify_selector(self.hass),
-                vol.Optional(
-                    CONF_ENTITY_ALIASES,
-                    default=_entity_aliases_text(
-                        subentry.data.get(CONF_ENTITY_ALIASES)
-                    ),
-                ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
             }
         )
-        chosen = (
-            user_input.get(CONF_ENTITIES, [])
-            if user_input
-            else subentry.data.get(CONF_ENTITIES, [])
-        )
+        chosen = _assigned(user_input if user_input else saved)
         issues = warnings or await _entity_issues(
             self.hass, entry, chosen, exclude_user_id=subentry.data[CONF_USER_ID]
         )
@@ -759,7 +901,12 @@ class SpeakerSubentryFlow(ConfigSubentryFlow):
             step_id="reconfigure",
             data_schema=schema,
             errors=errors,
-            description_placeholders={"entity_warnings": issues},
+            description_placeholders={
+                "entity_warnings": issues,
+                "person_header": _person_header(
+                    self.hass, subentry.data.get(CONF_PERSON_ENTITY), subentry.title
+                ),
+            },
         )
 
 
@@ -773,24 +920,26 @@ class EntityLinkSubentryFlow(ConfigSubentryFlow):
                 continue
             user = await self.hass.auth.async_get_user(sub.data[CONF_USER_ID])
             if user and user.is_active:
+                name = await speaker_name(self.hass, sub.data)
                 options.append(
                     selector.SelectOptionDict(
-                        value=user.id,
+                        value=sub.data[CONF_USER_ID],
                         label=(
-                            f"{user.name} ({sub.data.get(CONF_ADDRESS_AS, '')})"
+                            f"{name} ({sub.data[CONF_ADDRESS_AS]})"
                             if sub.data.get(CONF_ADDRESS_AS)
-                            else user.name
+                            else name
                         ),
                     )
                 )
         return options
 
     async def _entry_title(self, name: str, user_id: str) -> str:
-        """Include the owner's first name in the link row shown in Home Assistant."""
-        user = await self.hass.auth.async_get_user(user_id)
-        parts = (user.name if user else user_id).split()
-        owner = parts[0] if parts else "Person"
-        return f"{name} ({owner})"
+        """Name the link and its person in the row shown in Home Assistant."""
+        return await link_title(
+            self.hass,
+            self._get_entry(),
+            {CONF_LINK_NAME: name, CONF_USER_ID: user_id},
+        )
 
     def _link_names_in_use(
         self, user_id: str, names: list[str], exclude: str | None = None

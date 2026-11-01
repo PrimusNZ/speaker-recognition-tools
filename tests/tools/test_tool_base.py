@@ -118,7 +118,7 @@ def test_other_person_cannot_select_private_calendar_by_alias():
 async def test_tool_descriptions_document_person_aliases(hass, users) -> None:
     api_instance = await instance(hass, users["James"])
     descriptions = {tool.name: tool.description for tool in api_instance.tools}
-    assert len(descriptions) == 15
+    assert len(descriptions) == 16
     for description in descriptions.values():
         assert "first name" in description
         assert "configured form of address" in description

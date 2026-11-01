@@ -3,10 +3,10 @@
   "name": "Speaker Recognition Tools",
   "codeowners": ["@PrimusNZ"],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["person"],
   "documentation": "https://github.com/PrimusNZ/speaker-recognition-tools",
   "iot_class": "calculated",
   "integration_type": "service",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "issue_tracker": "https://github.com/PrimusNZ/speaker-recognition-tools/issues"
 }

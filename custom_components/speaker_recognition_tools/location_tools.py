@@ -11,6 +11,9 @@ from homeassistant.components.recorder import history as recorder_history
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
+    device_registry as dr,
+)
+from homeassistant.helpers import (
     entity_registry as er,
 )
 from homeassistant.helpers import (
@@ -475,3 +478,291 @@ def _location_name(state: str | None) -> str:
     if state in (None, "unknown", "unavailable"):
         return "unavailable"
     return "outside known zones" if state == "not_home" else state
+
+
+# The Companion App's BLE transmitter sensor, after the webhook id prefix. Its id
+# attribute is the iBeacon that a BLE tracking integration may track as a separate
+# device.
+_BLE_TRANSMITTER_SUFFIX = "_ble_emitter"
+
+
+def _beacon_key(value: str) -> str:
+    return value.replace("-", "").replace(":", "").casefold()
+
+
+def _device_room(
+    hass: HomeAssistant, household: Household, device_id: str
+) -> tuple[str, datetime.datetime | None] | None:
+    """Find the room a device is in now, and since when, or None.
+
+    Uses an area sensor on the device, such as Bermuda's Area sensor, whose state is
+    the area name, then an area attribute on one of its device trackers. A sensor or
+    tracker another person has marked private is never read.
+    """
+    registry = er.async_get(hass)
+    entries = [
+        e
+        for e in er.async_entries_for_device(registry, device_id)
+        if not household.blocked(e.entity_id)
+    ]
+    for entry in entries:
+        if (
+            entry.domain != "sensor"
+            or (state := hass.states.get(entry.entity_id)) is None
+        ):
+            continue
+        area = _usable(state.attributes.get("area_name"))
+        if area and _usable(state.state) == area:
+            return area, state.last_changed
+    for entry in entries:
+        if entry.domain != "device_tracker":
+            continue
+        state = hass.states.get(entry.entity_id)
+        if state is not None and (area := _usable(state.attributes.get("area"))):
+            return area, None
+    return None
+
+
+def _beacon_device(
+    hass: HomeAssistant, device_id: str, candidates: set[str]
+) -> str | None:
+    """Find which of the candidate devices tracks this phone's BLE transmitter.
+
+    Any integration counts: a candidate matches when one of its identifiers is the
+    transmitter's iBeacon id, ignoring case, dashes and colons.
+    """
+    registry = er.async_get(hass)
+    devices = dr.async_get(hass)
+    for entry in er.async_entries_for_device(registry, device_id):
+        if entry.domain != "sensor" or not (entry.unique_id or "").endswith(
+            _BLE_TRANSMITTER_SUFFIX
+        ):
+            continue
+        state = hass.states.get(entry.entity_id)
+        beacon = _usable(state.attributes.get("id")) if state else None
+        if not beacon:
+            continue
+        key = _beacon_key(beacon)
+        for candidate in candidates - {device_id}:
+            device = devices.async_get(candidate)
+            if device and any(_beacon_key(i) == key for _, i in device.identifiers):
+                return candidate
+    return None
+
+
+def _no_device_address_note(speaker: Person, target: Person, device: str) -> str:
+    """The reply the agent must give when no exact address is known for a device."""
+    whose = (
+        "your" if target.user_id == speaker.user_id else f"{target.third_person_form}'s"
+    )
+    return (
+        f'Reply with exactly: "Sorry {speaker.direct_address}, An exact address for '
+        f'{whose} {device} is unknown." Add nothing else and do not guess where it is.'
+    )
+
+
+class GetDeviceLocationTool(_PersonTool):
+    """Say where a person's phone or other tracked device is, down to the room."""
+
+    name = "get_device_location"
+    title = "Get device location"
+    description = (
+        "Say where a person's phone or other tracked device is, for example "
+        "'where is my phone?'. "
+        f"{_people_parameter_guidance('Omit people to use the current speaker.')} "
+        "Optional device narrows the result to one device by its name, alias, "
+        "model or entity_id; omit it to get all of their devices. Uses their "
+        "assigned device trackers and the trackers of their assigned person "
+        "entity. When a device is at home and a room is known, room is the Home "
+        "Assistant area it is in; say that room. Otherwise location is its zone, "
+        "or its street name and town when it is outside every zone. Each result "
+        "has since_spoken, ready to say aloud. Follow any room_note or "
+        "address_note exactly and never guess a room or a place. A private "
+        "device can only be located by its owner."
+    )
+    annotations = _READ_ONLY
+    parameters = vol.Schema(
+        {vol.Optional("people"): [str], vol.Optional("device"): str}
+    )
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ):
+        args = tool_input.tool_args
+        people, problems = self._people(args)
+        wanted = str(args.get("device") or "").strip().casefold()
+        results = []
+        for person in people:
+            assigned, usable = self.household.entities(person, LOCATION_DOMAINS)
+            if not assigned:
+                results.append(
+                    {
+                        "person": self.household.reference(person),
+                        "devices": [],
+                        "reason": "no device tracker or person entity assigned",
+                    }
+                )
+                continue
+            if not usable:
+                results.append(
+                    {
+                        "person": self.household.reference(person),
+                        "devices": [],
+                        "reason": "private",
+                    }
+                )
+                continue
+            devices = self._devices(hass, person, usable)
+            if wanted:
+                matching = [d for d in devices if wanted in d.pop("_names")]
+                if not matching:
+                    problems.append(
+                        {
+                            "person": self.household.reference(person),
+                            "problem": "device_not_found",
+                            "message": (
+                                f"No device matching {args['device']!r} is tracked for "
+                                f"{self.household.reference(person)}."
+                            ),
+                            "options": [d["device"] for d in devices],
+                        }
+                    )
+                    continue
+                devices = matching
+            else:
+                for device in devices:
+                    device.pop("_names")
+            results.append(
+                {
+                    "person": self.household.reference(person),
+                    "devices": devices,
+                    **({} if devices else {"reason": "no device tracker found"}),
+                }
+            )
+        data: dict[str, Any] = {"people": results}
+        if problems:
+            data["problems"] = problems
+        return _result(data, error=not results and bool(problems))
+
+    def _trackers(
+        self, hass: HomeAssistant, person: Person, usable: list[tuple[str, str]]
+    ) -> list[tuple[str, str | None]]:
+        """The person's trackers, with their configured label when assigned.
+
+        A person entity contributes the trackers Home Assistant combines for it.
+        """
+        owner = person.user_id == self.household.speaker.user_id
+        found: dict[str, str | None] = {}
+        for entity_id, label in usable:
+            if entity_id.startswith("device_tracker."):
+                found.setdefault(entity_id, label)
+        for entity_id, _ in usable:
+            if not entity_id.startswith("person."):
+                continue
+            state = hass.states.get(entity_id)
+            for tracker in (
+                (state.attributes.get("device_trackers") or []) if state else []
+            ):
+                if (
+                    isinstance(tracker, str)
+                    and not self.household.blocked(tracker)
+                    and (owner or tracker not in person.private)
+                ):
+                    found.setdefault(tracker, None)
+        return list(found.items())
+
+    def _devices(
+        self, hass: HomeAssistant, person: Person, usable: list[tuple[str, str]]
+    ) -> list[dict[str, Any]]:
+        registry = er.async_get(hass)
+        devices = dr.async_get(hass)
+        trackers = self._trackers(hass, person, usable)
+        # A tracked BLE beacon for a phone is the same device as the phone, so it
+        # is folded into the phone's result rather than listed on its own.
+        tracked = {
+            entry.device_id
+            for tracker_id, _ in trackers
+            if (entry := registry.async_get(tracker_id)) and entry.device_id
+        }
+        beacons: dict[str, str] = {}
+        for device_id in tracked:
+            if beacon := _beacon_device(hass, device_id, tracked):
+                beacons[device_id] = beacon
+        folded = set(beacons.values())
+        results = []
+        for tracker_id, label in trackers:
+            entry = registry.async_get(tracker_id)
+            device_id = entry.device_id if entry else None
+            if device_id in folded and device_id not in beacons:
+                continue
+            device = devices.async_get(device_id) if device_id else None
+            state = hass.states.get(tracker_id)
+            model = device.model if device else None
+            # Device names are often a full account name, so only a configured
+            # label or the model is shown.
+            name = (
+                label
+                or model
+                or ("phone" if entry and entry.platform == "mobile_app" else "device")
+            )
+            result: dict[str, Any] = {
+                "device": name,
+                "entity_id": tracker_id,
+                "_names": {
+                    n.casefold()
+                    for n in (
+                        tracker_id,
+                        name,
+                        model or "",
+                        *person.aliases_for(tracker_id),
+                    )
+                    if n
+                },
+            }
+            if not entry or entry.platform == "mobile_app":
+                result["_names"].add("phone")
+            zone = state.state if state else None
+            room = None
+            # A room only makes sense while the device is at home.
+            if device_id and zone in (None, "home", *_UNUSABLE):
+                for source in (device_id, beacons.get(device_id)):
+                    if source and (room := _device_room(hass, self.household, source)):
+                        break
+            if room:
+                area, since = room
+                result["room"] = area
+                result["location"] = "home"
+                result["since_spoken"] = (
+                    _since_spoken(f"in the {area}", since, dt_util.utcnow())
+                    if since
+                    else f"in the {area}"
+                )
+                results.append(result)
+                continue
+            location = _location_name(zone)
+            result["location"] = location
+            if location == "outside known zones":
+                if address := _address_for(hass, self.household, tracker_id):
+                    result["location"] = address
+                else:
+                    result["address_note"] = _no_device_address_note(
+                        self.household.speaker, person, name
+                    )
+            elif location == "home":
+                result["room_note"] = (
+                    f"No room is known for this {name}. Say it is at home and do "
+                    "not guess a room."
+                )
+            if (
+                state is not None
+                and "address_note" not in result
+                and location != "unavailable"
+            ):
+                result["since_spoken"] = _since_spoken(
+                    result["location"], state.last_changed, dt_util.utcnow()
+                )
+            results.append(result)
+        return results

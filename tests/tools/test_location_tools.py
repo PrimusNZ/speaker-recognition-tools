@@ -15,9 +15,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools import location_tools
 from custom_components.speaker_recognition_tools.location_tools import (
+    _device_room,
     _since_phrase,
     _spoken_clock,
 )
+from custom_components.speaker_recognition_tools.prompt import Person
+from custom_components.speaker_recognition_tools.tool_base import Household
 from tests.tools.helpers import (
     _problems,
     call,
@@ -493,3 +496,212 @@ async def test_unknown_address_note_is_not_supplemented_with_a_location_guess(
 
 
 # ---------------------------------------------------------------------- prompt/schema
+
+
+# ------------------------------------------------------------------ device location
+
+_BEACON = "1234abcd-0000-4000-8000-00000000beef_100_1"
+_BEACON_KEY = _BEACON.replace("-", "")
+
+
+def _phone_with_beacon(
+    hass: HomeAssistant, *, room: str | None = "Study", tracker: str = "bermuda"
+) -> None:
+    """Register a Companion App phone whose BLE transmitter another integration tracks."""
+    phone_config = MockConfigEntry(domain="mobile_app")
+    phone_config.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    registry = er.async_get(hass)
+    phone = devices.async_get_or_create(
+        config_entry_id=phone_config.entry_id,
+        identifiers={("mobile_app", "james")},
+        name="James Example",
+        model="Example Phone 9",
+    )
+    registry.async_get_or_create(
+        "device_tracker",
+        "mobile_app",
+        "james-tracker",
+        device_id=phone.id,
+        config_entry=phone_config,
+        suggested_object_id="james_phone",
+    )
+    registry.async_get_or_create(
+        "sensor",
+        "mobile_app",
+        "james-hook_ble_emitter",
+        device_id=phone.id,
+        config_entry=phone_config,
+        suggested_object_id="james_phone_ble_transmitter",
+    )
+    hass.states.async_set(
+        "sensor.james_phone_ble_transmitter", "Transmitting", {"id": _BEACON}
+    )
+    hass.states.async_set("device_tracker.james_phone", "home")
+
+    bermuda_config = MockConfigEntry(domain=tracker)
+    bermuda_config.add_to_hass(hass)
+    beacon = devices.async_get_or_create(
+        config_entry_id=bermuda_config.entry_id,
+        identifiers={(tracker, _BEACON_KEY)},
+        name=_BEACON_KEY,
+    )
+    for domain, object_id in (
+        ("sensor", "james_beacon_area"),
+        ("device_tracker", "james_beacon"),
+    ):
+        registry.async_get_or_create(
+            domain,
+            tracker,
+            f"{_BEACON_KEY}-{domain}",
+            device_id=beacon.id,
+            config_entry=bermuda_config,
+            suggested_object_id=object_id,
+        )
+    hass.states.async_set(
+        "sensor.james_beacon_area",
+        room or "unknown",
+        {"area_id": "study", "area_name": room} if room else {},
+    )
+    hass.states.async_set("device_tracker.james_beacon", "home")
+    hass.states.async_set(
+        "person.james",
+        "home",
+        {
+            "device_trackers": [
+                "device_tracker.james_phone",
+                "device_tracker.james_beacon",
+            ]
+        },
+    )
+
+
+async def _devices(hass, user, **args):
+    data, error = await call(hass, user, "get_device_location", **args)
+    assert not error
+    return data["people"][0]
+
+
+async def test_my_phone_is_in_the_room_bermuda_reports(hass, users, freezer) -> None:
+    freezer.move_to(local(26, 15, 0))
+    _phone_with_beacon(hass)
+    freezer.move_to(now())
+    result = await _devices(hass, users["James"])
+    assert result["person"] == "Dad"
+    assert result["devices"] == [
+        {
+            "device": "james phone",
+            "entity_id": "device_tracker.james_phone",
+            "room": "Study",
+            "location": "home",
+            "since_spoken": "in the Study since three o'clock",
+        }
+    ]
+
+
+async def test_any_ble_tracking_integration_gives_the_room(hass, users) -> None:
+    _phone_with_beacon(hass, tracker="example_ble")
+    result = await _devices(hass, users["James"])
+    assert [(d["entity_id"], d.get("room")) for d in result["devices"]] == [
+        ("device_tracker.james_phone", "Study")
+    ]
+
+
+async def test_beacon_not_on_the_person_entity_is_not_used(hass, users) -> None:
+    _phone_with_beacon(hass)
+    hass.states.async_set(
+        "person.james", "home", {"device_trackers": ["device_tracker.james_phone"]}
+    )
+    device = (await _devices(hass, users["James"]))["devices"][0]
+    assert "room" not in device
+    assert "room_note" in device
+
+
+async def test_unregistered_tracker_from_the_person_entity_is_a_device(
+    hass, users
+) -> None:
+    _phone_with_beacon(hass)
+    hass.states.async_set(
+        "person.james",
+        "home",
+        {"device_trackers": ["device_tracker.james_phone", "device_tracker.other"]},
+    )
+    hass.states.async_set("device_tracker.other", "home")
+    result = await _devices(hass, users["Sarah"], people=["Dad"])
+    by_id = {d["entity_id"]: d for d in result["devices"]}
+    assert by_id["device_tracker.other"]["device"] == "device"
+    assert by_id["device_tracker.other"]["room_note"].startswith("No room is known")
+    assert "James Example" not in str(result)
+
+
+async def test_trackers_come_from_the_person_entity(hass, users) -> None:
+    _phone_with_beacon(hass)
+    hass.states.async_set("person.kim_extra", "home")
+    result = await _devices(hass, users["Sarah"], people=["Dad"])
+    assert [d["entity_id"] for d in result["devices"]] == ["device_tracker.james_phone"]
+    assert result["devices"][0]["room"] == "Study"
+
+
+async def test_no_room_while_the_phone_is_away(hass, users) -> None:
+    _phone_with_beacon(hass)
+    hass.states.async_set(
+        "device_tracker.james_phone", "not_home", {"address": "17 Fixture Lane"}
+    )
+    device = (await _devices(hass, users["James"]))["devices"][0]
+    assert "room" not in device
+    assert device["location"] == "Fixture Lane"
+
+
+async def test_unknown_room_says_home_without_guessing(hass, users) -> None:
+    _phone_with_beacon(hass, room=None)
+    device = (await _devices(hass, users["James"]))["devices"][0]
+    assert "room" not in device
+    assert device["location"] == "home"
+    assert "do not guess a room" in device["room_note"]
+
+
+async def test_away_phone_without_address_gets_exact_reply(hass, users) -> None:
+    hass.states.async_set("person.james", "not_home")
+    hass.states.async_set("device_tracker.james_phone", "not_home")
+    devices = (await _devices(hass, users["Sarah"], people=["Dad"]))["devices"]
+    assert devices[0]["address_note"].startswith(
+        "Reply with exactly: \"Sorry Mum, An exact address for Dad's"
+    )
+    assert "since_spoken" not in devices[0]
+
+
+async def test_device_filter_picks_one_device(hass, users) -> None:
+    _phone_with_beacon(hass)
+    result = await _devices(hass, users["James"], device="phone")
+    assert [d["entity_id"] for d in result["devices"]] == ["device_tracker.james_phone"]
+    data, error = await call(
+        hass, users["James"], "get_device_location", device="tablet"
+    )
+    assert error
+    assert _problems(data)["device_not_found"][0]["options"]
+
+
+async def test_device_location_respects_privacy(hass, users) -> None:
+    hass.states.async_set("device_tracker.ann_phone", "home")
+    hass.states.async_set(
+        "person.james", "home", {"device_trackers": ["device_tracker.ann_phone"]}
+    )
+    result = await _devices(hass, users["James"])
+    assert "device_tracker.ann_phone" not in str(result)
+    tom = await _devices(hass, users["James"], people=["Grandad"])
+    assert tom == {"person": "Grandad", "devices": [], "reason": "private"}
+    own = await _devices(hass, users["Ann"])
+    assert [d["entity_id"] for d in own["devices"]] == ["device_tracker.ann_phone"]
+
+
+async def test_private_room_sensor_is_not_read_for_others(hass) -> None:
+    _phone_with_beacon(hass)
+    owner = Person(
+        "u1", "Kim", "Cousin", private=frozenset({"sensor.james_beacon_area"})
+    )
+    other = Person("u2", "Sam", "Sam")
+    (beacon,) = dr.async_get(hass).async_get_devices(
+        identifiers={("bermuda", _BEACON_KEY)}
+    )  # registered by _phone_with_beacon
+    assert _device_room(hass, Household([owner, other], other), beacon.id) is None
+    assert _device_room(hass, Household([owner, other], owner), beacon.id)[0] == "Study"

@@ -11,6 +11,10 @@ from homeassistant.helpers.typing import ConfigType
 from .const import CONF_TOOL_TYPE, TOOL_TYPE_PERSON
 from .issues import async_clear_entry, async_setup_repairs
 from .llm_api import SpeakingDeviceAPI, SpeakingPersonAPI
+from .migration import (
+    async_move_calendars_to_their_field,
+    async_move_people_to_person_entities,
+)
 from .services import async_setup_services
 
 PERSON_PLATFORMS = [Platform.SENSOR]
@@ -19,6 +23,21 @@ PERSON_PLATFORMS = [Platform.SENSOR]
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the actions that scripts can call."""
     async_setup_services(hass)
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Bring older entries up to date."""
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        if entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_PERSON:
+            async_move_people_to_person_entities(hass, entry)
+        hass.config_entries.async_update_entry(entry, minor_version=2)
+    if entry.minor_version < 3:
+        if entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_PERSON:
+            async_move_calendars_to_their_field(hass, entry)
+        hass.config_entries.async_update_entry(entry, minor_version=3)
     return True
 
 

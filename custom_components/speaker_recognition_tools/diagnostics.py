@@ -11,12 +11,15 @@ from homeassistant.helpers import llm
 
 from .const import (
     CONF_ADMIN_ENTITIES,
+    CONF_CALENDARS,
     CONF_CONFIRM_ENTITIES,
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
+    CONF_LOCATION_PRIVATE,
     CONF_MIN_CONFIDENCE,
     CONF_NOTIFY_SERVICE,
+    CONF_PERSON_ENTITY,
     CONF_PRIVATE_ENTITIES,
     CONF_REFUSAL_LINES,
     CONF_TOOL_TYPE,
@@ -29,7 +32,7 @@ from .const import (
     TOOL_TYPE_PERSON,
 )
 from .issues import is_missing, subentry_entity_ids
-from .people import address_as, first_name
+from .people import address_as, first_name, todo_settings
 from .recognition import history_available
 
 
@@ -82,6 +85,11 @@ async def async_get_config_entry_diagnostics(
                 "confirm_entities": len(sub.data.get(CONF_CONFIRM_ENTITIES, [])),
                 "admin_entities": len(sub.data.get(CONF_ADMIN_ENTITIES, [])),
                 "message_action_set": bool(sub.data.get(CONF_NOTIFY_SERVICE)),
+                "calendars": len(sub.data.get(CONF_CALENDARS, [])),
+                "person_entity_set": bool(sub.data.get(CONF_PERSON_ENTITY)),
+                "location_private": bool(sub.data.get(CONF_LOCATION_PRIVATE)),
+                "todo_list_set": bool(todo_settings(sub.data)[0]),
+                "todo_list_private": todo_settings(sub.data)[1],
                 "missing_entities": sorted(
                     e for e in subentry_entity_ids(sub) if is_missing(hass, e)
                 ),

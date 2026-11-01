@@ -17,17 +17,22 @@ SUBENTRY_ENTITY_LINK = (
 SUBENTRY_PREVIEW = (
     "full_prompt_preview"  # transient integration-level prompt preview flow
 )
-CONF_USER_ID = "user_id"
+CONF_USER_ID = "user_id"  # the account, kept in step with the person entity
+CONF_PERSON_ENTITY = "person_entity"  # the person entity a speaking person is built on
+CONF_LOCATION_PRIVATE = "location_private"  # only the person may read their location
 CONF_ADDRESS_AS = "address_as"  # Optional direct-address form shown as "Address as".
 CONF_LEGACY_ADDRESS_AS = (
     "title"  # Read existing entries created before the field was renamed.
 )
 CONF_THIRD_PERSON_REFERENCE = "third_person_reference"
 CONF_ENTITIES = "entities"  # optional list of entity ids
+CONF_CALENDARS = "calendars"  # the person's calendar entity ids
 CONF_ENTITY_ALIASES = "entity_aliases"  # entity id to alternate names
 CONF_PRIVATE_ENTITIES = "private_entities"  # subset of entities only the owner may use
 CONF_CONFIRM_ENTITIES = "confirm_entities"  # subset needing a spoken yes to control
 CONF_ADMIN_ENTITIES = "admin_entities"  # subset only administrators may control
+CONF_TODO_LIST = "todo_list"  # the person's one to-do list entity id
+CONF_TODO_PRIVATE = "todo_private"  # only the person may use their to-do list
 CONF_NOTIFY_SERVICE = (
     "notify_service"  # optional notify action for messages, e.g. notify.mobile_app_x
 )

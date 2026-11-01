@@ -153,14 +153,14 @@ async def test_recognised_turn_fires_event_and_updates_sensor(
 
     (event,) = events
     assert event.data["recognised"] is True
-    assert event.data["name"] == "James"
+    assert event.data["name"] == "James Example"
     assert event.data["address_as"] == "Dad"
     assert event.data["device"] == "Kitchen satellite"
     assert event.data["area"] == "Kitchen"
     assert event.data["confidence"] is None
     assert event.context.user_id == james.id
     state = hass.states.get(_sensor_id(hass, entry))
-    assert state.state == "James"
+    assert state.state == "James Example"
     assert state.attributes["area"] == "Kitchen"
     assert state.attributes["user_id"] == james.id
 

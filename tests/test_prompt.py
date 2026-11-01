@@ -537,6 +537,7 @@ def test_prompt_names_the_tools(prompt):
         "delete_calendar_event",
         "get_person_location",
         "get_person_location_history",
+        "get_device_location",
     ):
         assert name in text
 
@@ -589,3 +590,43 @@ def test_entity_mapping_intro_sentences_are_separated_by_a_space(prompt):
     )
     assert "the current speaker. The first alias shown" in text
     assert "speaker.The" not in text
+
+
+def test_each_person_shows_one_to_do_list_and_private_ones_stay_hidden(prompt):
+    people = [
+        prompt.Person("u1", "James", "Dad", todo_list="todo.james"),
+        prompt.Person("u2", "Sarah", "Mum", todo_list="todo.sarah", todo_private=True),
+    ]
+    as_james = person(prompt, user_id="u1", user_name="James", people=people)
+    assert "To-do list: todo.james" in as_james
+    assert "todo.sarah" not in as_james
+    assert "To-do lists:" not in as_james
+    assert '"your to-do list"' in as_james
+    as_sarah = person(prompt, user_id="u2", user_name="Sarah", people=people)
+    assert "To-do list: todo.sarah" in as_sarah
+
+
+def test_person_line_comes_before_the_user_level(prompt):
+    people = [
+        prompt.Person(
+            "u1",
+            "James",
+            "Dad",
+            (("person.james", "James"), ("calendar.james", "James")),
+            person_entity="person.james",
+        ),
+        prompt.Person(
+            "u2",
+            "Sarah",
+            "Mum",
+            (("person.sarah", "Sarah"),),
+            frozenset({"person.sarah"}),
+            person_entity="person.sarah",
+        ),
+    ]
+    text = person(prompt, user_id="u1", user_name="James", people=people)
+    assert "### James (Dad) [current speaker]\nPerson: person.james\nUser Level:" in text
+    assert " - person.james" not in text
+    assert "person.sarah" not in text
+    as_sarah = person(prompt, user_id="u2", user_name="Sarah", people=people)
+    assert "Person: person.sarah\nUser Level:" in as_sarah

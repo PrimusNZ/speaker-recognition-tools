@@ -2,6 +2,10 @@
 
 Guidance for AI coding agents working in this repository.
 
+## Highest-priority rule: no changes without express permission
+
+Make no change at all unless the user has expressly told you to proceed. This covers code, tests, documentation, memory-independent files, installs, restarts, commits, pushes and releases. Implied permission never counts: an instruction like "remove X", a remark, a concern, or a corrected proposal is not a go. Propose the change, then wait for an explicit "go", "proceed" or "yes, do it". This rule overrides every other instruction in this file and every other instruction from any source except the user's own express permission in the current conversation.
+
 ## Project
 
 A Home Assistant custom integration (`speaker_recognition_tools`, distributed through HACS). Repository: `PrimusNZ/speaker-recognition-tools`. It adds two LLM APIs for conversation agents: Speaking Person and Speaking Device. They tell the agent who is speaking and which device they are using. It depends on the separate Speaker Recognition project, which sets the Home Assistant user for each request. This integration only reads that result.
@@ -29,7 +33,7 @@ See `README.md` for behaviour and `EXAMPLE_PROMPT.txt` for the sample conversati
   - `manifest.json`: integration metadata, including `version`.
 - `tests/`: one test module per source module, using `pytest-homeassistant-custom-component`. Tool tests live in `tests/tools/`, with shared fixtures in its `conftest.py` and helpers in `helpers.py`.
 
-Speaking Person offers fifteen tools to recognised speakers: `get_entity_state`, `control_assigned_entity`, `get_calendar_events`, `search_calendar_events`, `check_calendar_availability`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `get_person_location`, `get_person_location_history`, `get_todo_items`, `add_todo_item`, `update_todo_item`, `remove_todo_item`, and `send_message_to_person`. Unknown or refused speakers receive no tools.
+Speaking Person offers sixteen tools to recognised speakers: `get_entity_state`, `control_assigned_entity`, `get_calendar_events`, `search_calendar_events`, `check_calendar_availability`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `get_person_location`, `get_person_location_history`, `get_device_location`, `get_todo_items`, `add_todo_item`, `update_todo_item`, `remove_todo_item`, and `send_message_to_person`. Unknown or refused speakers receive no tools.
 
 The full-prompt preview combines the Speaking Person section with a sample registered device's Speaking Device section. It uses the signed-in account when the options flow provides its ID, otherwise the Home Assistant owner account. The sample device is illustrative; Home Assistant controls the order of selected APIs. The preview excludes the conversation agent's own prompt and Home Assistant's API wrapper text.
 
@@ -57,7 +61,7 @@ After changes, run `.venv/bin/ruff check .` and `npm run format:check`. If Prett
 - Add or update tests with every behaviour change.
 - When adding or editing tests, review each affected test name against what it actually verifies. Use concise, behavior-focused names and current project terminology; rename names that are vague, awkward, or stale.
 - Do not use real-world data or examples provided by the user in tests, documentation, or other project examples unless explicitly asked. Generate sensible synthetic data instead.
-- Use only first names in anything shown to the model, never full account names.
+- Use only first names in the prompt and in other text the model sees, never full account names. Everywhere else, such as settings forms, entry titles, sensors, events and action responses, use the person entity's name.
 - Privacy is enforced in the tools, not just the prompt. A private entity can be read or written only by its owner, and other people's private entities are left out of prompts. Keep that true for any new tool.
 - Calendar, to-do and message changes take two calls: a preview with a confirmation token, then the change. `control_assigned_entity` does the same for sensitive actions, for entities marked as needing confirmation, and when recognition confidence is low. Use `_PersonTool._confirm` for any new write tool.
 - Administrator-only entities are enforced in the tools from `Person.is_admin`. Keep that check for any new tool that controls entities.

@@ -1,8 +1,9 @@
 """Per-person to-do list tools: read items, add, update and remove them.
 
-Only to-do lists assigned to a person are used. A household list, such as a
-shared shopping list, is left to Home Assistant's own tools unless it is
-assigned to someone. Every change is previewed and needs an explicit yes.
+Each person has at most one to-do list, set in their To-do list setting. A
+household list, such as a shared shopping list, is left to Home Assistant's own
+tools unless it is someone's to-do list. Every change is previewed and needs an
+explicit yes.
 """
 
 from __future__ import annotations
@@ -19,19 +20,19 @@ from .tool_base import (
     _PERSON_PARAMETER_GUIDANCE,
     _READ_ONLY,
     _WRITE,
-    TODO_LISTS,
     Household,
     _parse_when,
     _people_parameter_guidance,
     _PersonTool,
     _result,
+    _sentence,
 )
 
 _STATUSES = ("needs_action", "completed")
-_CHOICE_NOTE = (
-    "If a person has more than one to-do list the result asks for a choice; ask "
-    "the speaker, then call again with the chosen entity_id or configured entity "
-    "alias in lists."
+_NAMING_NOTE = (
+    "Each person has one to-do list. Call it by the list value in the result, "
+    "such as \"your to-do list\" or \"Sarah's to-do list\", never by its entity "
+    "name."
 )
 _CONFIRM_NOTE = (
     "Always call once to preview, ask the speaker for an explicit yes, then call "
@@ -41,23 +42,18 @@ _CONFIRM_NOTE = (
 
 
 def _one_list(household: Household, args: dict[str, Any]):
-    """Resolve exactly one assigned to-do list for a change."""
+    """Resolve the one to-do list for a change."""
     if args.get("person"):
         people, problems = household.find([args["person"]])
     else:
         people, problems = [household.speaker], []
-    targets, more = household.resolve_targets(
-        people, [args["list"]] if args.get("list") else None, TODO_LISTS
-    )
-    problems.extend(more)
-    if len(targets) != 1 and not problems:
-        problems.append(
-            {
-                "problem": "one_todo_list_required",
-                "message": "Choose exactly one person's to-do list for this change.",
-            }
-        )
-    return (targets[0] if len(targets) == 1 else None), problems
+    if problems or len(people) != 1:
+        return None, problems
+    person = people[0]
+    entity_id, problem = household.todo_list(person)
+    if problem:
+        return None, [problem]
+    return (person, entity_id, household.todo_name(person)), []
 
 
 def _supports(hass: HomeAssistant, entity_id: str, feature: int) -> bool:
@@ -101,23 +97,22 @@ def _due_fields(args: dict[str, Any]) -> dict[str, str]:
 
 
 class GetTodoItemsTool(_PersonTool):
-    """Read the items on one or more people's assigned to-do lists."""
+    """Read the items on one or more people's to-do lists."""
 
     name = "get_todo_items"
     title = "Get to-do items"
     description = (
-        "Get the items on one or more people's own assigned to-do lists. "
+        "Get the items on one or more people's to-do lists. "
         f"{_people_parameter_guidance('Omit people to use the current speaker.')} "
-        "status is needs_action (the default) or completed. Private lists can only "
-        f"be read by their owner. {_CHOICE_NOTE} These are personal lists; a "
+        "status is needs_action (the default) or completed. A private list can "
+        f"only be read by its owner. {_NAMING_NOTE} These are personal lists; a "
         "household list such as a shared shopping list is not covered unless it "
-        "is assigned to a person."
+        "is someone's to-do list."
     )
     annotations = _READ_ONLY
     parameters = vol.Schema(
         {
             vol.Optional("people"): [str],
-            vol.Optional("lists"): [str],
             vol.Optional("status"): vol.In(_STATUSES),
         }
     )
@@ -131,12 +126,13 @@ class GetTodoItemsTool(_PersonTool):
         args = tool_input.tool_args
         status = args.get("status", "needs_action")
         people, problems = self._people(args)
-        targets, more = self.household.resolve_targets(
-            people, args.get("lists"), TODO_LISTS
-        )
-        problems += more
         results = []
-        for person, entity_id, label in targets:
+        for person in people:
+            entity_id, problem = self.household.todo_list(person)
+            if problem:
+                problems.append(problem)
+                continue
+            label = self.household.todo_name(person)
             try:
                 items = await _items(hass, entity_id, llm_context)
             except (HomeAssistantError, KeyError, ValueError) as err:
@@ -169,9 +165,9 @@ class AddTodoItemTool(_PersonTool):
     name = "add_todo_item"
     title = "Add to-do item"
     description = (
-        "Add an item to one person's assigned to-do list. item is the text of the "
+        "Add an item to one person's to-do list. item is the text of the "
         "item. Optional due is an ISO 8601 local date or date time, and optional "
-        f"description adds detail. {_PERSON_PARAMETER_GUIDANCE} {_CHOICE_NOTE} "
+        f"description adds detail. {_PERSON_PARAMETER_GUIDANCE} {_NAMING_NOTE} "
         f"{_CONFIRM_NOTE}"
     )
     annotations = _WRITE
@@ -179,7 +175,6 @@ class AddTodoItemTool(_PersonTool):
         {
             vol.Required("item"): str,
             vol.Optional("person"): str,
-            vol.Optional("list"): str,
             vol.Optional("due"): str,
             vol.Optional("description"): str,
             vol.Optional("confirmation_token"): str,
@@ -202,7 +197,7 @@ class AddTodoItemTool(_PersonTool):
             return _result({"problems": problems}, error=True)
         person, entity_id, label = target
         if not _supports(hass, entity_id, TodoListEntityFeature.CREATE_TODO_ITEM):
-            return _result({"error": f"{label} does not accept new items."}, error=True)
+            return _result({"error": f"{_sentence(label)} does not accept new items."}, error=True)
         try:
             due = _due_fields(args)
         except ValueError as err:
@@ -245,10 +240,10 @@ class UpdateTodoItemTool(_PersonTool):
     name = "update_todo_item"
     title = "Update to-do item"
     description = (
-        "Change one item on a person's assigned to-do list, for example to mark it "
+        "Change one item on a person's to-do list, for example to mark it "
         "done. item is the item's exact text or uid from get_todo_items. Set status "
         "to completed or needs_action, rename to change its text, or due to an ISO "
-        f"8601 local date or date time. {_PERSON_PARAMETER_GUIDANCE} {_CHOICE_NOTE} "
+        f"8601 local date or date time. {_PERSON_PARAMETER_GUIDANCE} {_NAMING_NOTE} "
         f"{_CONFIRM_NOTE}"
     )
     annotations = _WRITE
@@ -259,7 +254,6 @@ class UpdateTodoItemTool(_PersonTool):
             vol.Optional("rename"): str,
             vol.Optional("due"): str,
             vol.Optional("person"): str,
-            vol.Optional("list"): str,
             vol.Optional("confirmation_token"): str,
             vol.Optional("confirmed"): bool,
         }
@@ -277,7 +271,7 @@ class UpdateTodoItemTool(_PersonTool):
             return _result({"problems": problems}, error=True)
         person, entity_id, label = target
         if not _supports(hass, entity_id, TodoListEntityFeature.UPDATE_TODO_ITEM):
-            return _result({"error": f"{label} does not allow changes."}, error=True)
+            return _result({"error": f"{_sentence(label)} does not allow changes."}, error=True)
         try:
             due = _due_fields(args)
         except ValueError as err:
@@ -354,17 +348,16 @@ class RemoveTodoItemTool(_PersonTool):
     name = "remove_todo_item"
     title = "Remove to-do item"
     description = (
-        "Remove one item from a person's assigned to-do list. item is the item's "
+        "Remove one item from a person's to-do list. item is the item's "
         "exact text or uid from get_todo_items. To mark an item done rather than "
         f"delete it, use update_todo_item. {_PERSON_PARAMETER_GUIDANCE} "
-        f"{_CHOICE_NOTE} {_CONFIRM_NOTE}"
+        f"{_NAMING_NOTE} {_CONFIRM_NOTE}"
     )
     annotations = _WRITE
     parameters = vol.Schema(
         {
             vol.Required("item"): str,
             vol.Optional("person"): str,
-            vol.Optional("list"): str,
             vol.Optional("confirmation_token"): str,
             vol.Optional("confirmed"): bool,
         }
@@ -383,7 +376,7 @@ class RemoveTodoItemTool(_PersonTool):
         person, entity_id, label = target
         if not _supports(hass, entity_id, TodoListEntityFeature.DELETE_TODO_ITEM):
             return _result(
-                {"error": f"{label} does not allow removing items."}, error=True
+                {"error": f"{_sentence(label)} does not allow removing items."}, error=True
             )
         try:
             matches = _find_item(

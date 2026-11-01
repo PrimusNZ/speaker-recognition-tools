@@ -80,7 +80,7 @@ async def test_person_diagnostics_leave_out_names(hass: HomeAssistant) -> None:
         "min_confidence": 0,
     }
     assert data["speaker_recognition_history_readable"] is False
-    assert data["open_issues"] == ["stale_entities"]
+    assert data["open_issues"] == ["missing_person", "stale_entities"]
     (person,) = data["people"]
     assert person == {
         "person": "person_1",
@@ -89,12 +89,17 @@ async def test_person_diagnostics_leave_out_names(hass: HomeAssistant) -> None:
         "account_active": True,
         "is_admin": False,
         "address_as_set": True,
-        "entity_domains": {"calendar": 1, "device_tracker": 1, "sensor": 1},
+        "entity_domains": {"device_tracker": 1, "sensor": 1},
         "private_entities": 1,
         "entities_with_aliases": 1,
         "confirm_entities": 0,
         "admin_entities": 0,
         "message_action_set": False,
+        "calendars": 1,
+        "person_entity_set": False,
+        "location_private": False,
+        "todo_list_set": False,
+        "todo_list_private": False,
         "missing_entities": ["sensor.removed"],
     }
     text = json.dumps(data)

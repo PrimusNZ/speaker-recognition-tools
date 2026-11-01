@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_ADDRESS_AS,
     CONF_ADMIN_ENTITIES,
+    CONF_CALENDARS,
     CONF_CONFIRM_ENTITIES,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
@@ -19,9 +20,13 @@ from .const import (
     CONF_LINK_NAME,
     CONF_LINK_PRIVATE,
     CONF_LINK_STATE_ENTITY,
+    CONF_LOCATION_PRIVATE,
     CONF_NOTIFY_SERVICE,
+    CONF_PERSON_ENTITY,
     CONF_PRIVATE_ENTITIES,
     CONF_THIRD_PERSON_REFERENCE,
+    CONF_TODO_LIST,
+    CONF_TODO_PRIVATE,
     CONF_USER_ID,
     SUBENTRY_ENTITY_LINK,
     SUBENTRY_SPEAKER,
@@ -33,6 +38,82 @@ def first_name(name: str | None) -> str | None:
     """Return the first word of an account name; only first names reach the prompt."""
     parts = (name or "").split()
     return parts[0] if parts else None
+
+
+def is_calendar(entity_id: str) -> bool:
+    return entity_id.startswith("calendar.")
+
+
+def is_person(entity_id: str) -> bool:
+    return entity_id.startswith("person.")
+
+
+def person_user_id(hass: HomeAssistant, entity_id: str | None) -> str | None:
+    """Return the user account linked to a person entity, or None."""
+    state = hass.states.get(entity_id) if entity_id else None
+    user_id = state.attributes.get("user_id") if state else None
+    return user_id if isinstance(user_id, str) and user_id else None
+
+
+def speaker_user_id(hass: HomeAssistant, data) -> str:
+    """Return a speaking person's account: their person entity's, else the saved one."""
+    return person_user_id(hass, data.get(CONF_PERSON_ENTITY)) or data[CONF_USER_ID]
+
+
+def is_todo(entity_id: str) -> bool:
+    return entity_id.startswith("todo.")
+
+
+def todo_settings(data) -> tuple[str | None, bool]:
+    """Return a person's to-do list and whether it is private.
+
+    People saved before the To-do list field existed had their lists in the
+    entity list; the first one becomes their to-do list, private if it was.
+    """
+    if CONF_TODO_LIST in data:
+        todo = data.get(CONF_TODO_LIST) or None
+        return todo, bool(todo and data.get(CONF_TODO_PRIVATE))
+    todo = next((e for e in data.get(CONF_ENTITIES, []) if is_todo(e)), None)
+    return todo, bool(todo and todo in data.get(CONF_PRIVATE_ENTITIES, []))
+
+
+async def speaker_name(hass: HomeAssistant, data) -> str:
+    """The name to show for a speaking person in settings, not in the prompt.
+
+    Uses the person entity's name, or the account name for older entries.
+    """
+    state = hass.states.get(data.get(CONF_PERSON_ENTITY) or "")
+    if state is not None:
+        return state.name
+    user = await hass.auth.async_get_user(data[CONF_USER_ID])
+    return user.name if user and user.name else data[CONF_USER_ID]
+
+
+async def link_title(hass: HomeAssistant, entry: ConfigEntry, data) -> str:
+    """Return the label for a linked device: its spoken name and its person."""
+    owner = next(
+        (
+            sub.data
+            for sub in entry.subentries.values()
+            if sub.subentry_type == SUBENTRY_SPEAKER
+            and sub.data[CONF_USER_ID] == data[CONF_USER_ID]
+        ),
+        {CONF_USER_ID: data[CONF_USER_ID]},
+    )
+    return f"{data[CONF_LINK_NAME]} ({await speaker_name(hass, owner)})"
+
+
+async def speaker_title(hass: HomeAssistant, data) -> str:
+    """Return the label Home Assistant lists a speaking person under."""
+    name = await speaker_name(hass, data)
+    count = len(data.get(CONF_ENTITIES, [])) + len(data.get(CONF_CALENDARS, []))
+    amount = (
+        "no entities" if not count else f"{count} {'entity' if count == 1 else 'entities'}"
+    )
+    if private := data.get(CONF_PRIVATE_ENTITIES):
+        amount += f", {len(private)} private"
+    form = address_as(data)
+    return f"{f'{name}: {form}' if form else name} ({amount})"
 
 
 def address_as(data) -> str:
@@ -78,25 +159,41 @@ async def async_configured_people(
     for sub in entry.subentries.values():
         if sub.subentry_type != SUBENTRY_SPEAKER:
             continue
-        account = await hass.auth.async_get_user(sub.data[CONF_USER_ID])
+        user_id = speaker_user_id(hass, sub.data)
+        account = await hass.auth.async_get_user(user_id)
         name = first_name(account.name) if account else None
         if account is None or not name:
             continue
         entities = []
-        for entity_id in sub.data.get(CONF_ENTITIES, []):
+        private = set(sub.data.get(CONF_PRIVATE_ENTITIES, []))
+        # The person entity always belongs to its person, ahead of their other
+        # entities. A to-do list only comes from the To-do list setting.
+        person_entity = sub.data.get(CONF_PERSON_ENTITY)
+        if person_entity:
+            state = hass.states.get(person_entity)
+            entities.append((person_entity, state.name if state else person_entity))
+            if sub.data.get(CONF_LOCATION_PRIVATE):
+                private.add(person_entity)
+        for entity_id in (
+            *sub.data.get(CONF_CALENDARS, []),
+            *sub.data.get(CONF_ENTITIES, []),
+        ):
+            if is_todo(entity_id) or (person_entity and is_person(entity_id)):
+                continue
             state = hass.states.get(entity_id)
             entities.append((entity_id, state.name if state else entity_id))
+        todo_list, todo_private = todo_settings(sub.data)
         entity_aliases = tuple(
             (entity_id, tuple(names))
             for entity_id, names in sub.data.get(CONF_ENTITY_ALIASES, {}).items()
         )
         people.append(
             Person(
-                sub.data[CONF_USER_ID],
+                user_id,
                 name,
                 address_as(sub.data),
                 tuple(entities),
-                frozenset(sub.data.get(CONF_PRIVATE_ENTITIES, [])),
+                frozenset(private),
                 sub.data.get(CONF_THIRD_PERSON_REFERENCE) or None,
                 entity_aliases,
                 tuple(links_by_user.get(sub.data[CONF_USER_ID], [])),
@@ -106,6 +203,10 @@ async def async_configured_people(
                 frozenset(sub.data.get(CONF_ADMIN_ENTITIES, []))
                 | link_admin_only.get(sub.data[CONF_USER_ID], set()),
                 sub.data.get(CONF_NOTIFY_SERVICE) or None,
+                todo_list,
+                todo_private,
+                person_entity,
+                await speaker_name(hass, sub.data),
             )
         )
     return people

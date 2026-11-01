@@ -19,7 +19,6 @@ from .prompt import Person
 
 SELF_WORDS = {"me", "my", "myself", "i", "self"}
 CALENDAR_DOMAINS = ("calendar",)
-TODO_DOMAINS = ("todo",)
 LOCATION_DOMAINS = ("person", "device_tracker")
 _DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _PENDING_CHANGES = "pending_changes"
@@ -54,6 +53,11 @@ _WRITE = llm.ToolAnnotations(
 )
 
 
+def _sentence(text: str) -> str:
+    """Capitalise the first letter only, leaving names as they are."""
+    return text[:1].upper() + text[1:]
+
+
 def _result(data: dict[str, Any], error: bool = False) -> llm.ToolResult:
     """Return a tool result."""
     return llm.ToolResult(data=data, error=error)
@@ -69,7 +73,6 @@ class TargetKind(NamedTuple):
 
 
 CALENDARS = TargetKind(CALENDAR_DOMAINS, "calendar", "calendar", "calendars")
-TODO_LISTS = TargetKind(TODO_DOMAINS, "to-do list", "todo_list", "lists")
 
 
 class Household:
@@ -133,6 +136,29 @@ class Household:
         owner = person.user_id == self.speaker.user_id
         usable = [e for e in assigned if owner or e[0] not in person.private]
         return assigned, usable
+
+    def todo_name(self, person: Person) -> str:
+        """How to name a person's to-do list aloud, for example "your to-do list"."""
+        if person.user_id == self.speaker.user_id:
+            return "your to-do list"
+        return f"{self.reference(person)}'s to-do list"
+
+    def todo_list(self, person: Person) -> tuple[str | None, dict[str, Any] | None]:
+        """Return a person's one to-do list, or the problem in the way."""
+        who = self.reference(person)
+        if not person.todo_list:
+            return None, {
+                "person": who,
+                "problem": "no_todo_list",
+                "message": f"{who} has no to-do list.",
+            }
+        if person.todo_private and person.user_id != self.speaker.user_id:
+            return None, {
+                "person": who,
+                "problem": "private",
+                "message": f"{_sentence(self.todo_name(person))} is private.",
+            }
+        return person.todo_list, None
 
     def blocked(self, entity_id: str) -> bool:
         """Whether another person has marked this entity private."""

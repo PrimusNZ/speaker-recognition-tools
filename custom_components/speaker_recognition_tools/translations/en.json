@@ -29,9 +29,9 @@
       "step": {
         "user": {
           "title": "Add person",
-          "description": "Choose the Home Assistant user account that Speaker Recognition links to this voice, and configure how the agent addresses and refers to them.",
+          "description": "Choose the person whose voice this is. Their Home Assistant user account, which Speaker Recognition links to the voice, comes from the person, and their person entity is used for their location. Then configure how the agent addresses and refers to them.",
           "data": {
-            "user_id": "Home Assistant user account",
+            "person_entity": "Person",
             "address_as": "Address as",
             "third_person_reference": "Third-person reference",
             "entities": "Entities",
@@ -39,16 +39,25 @@
             "private_entities": "Private entities",
             "confirm_entities": "Entities that need confirmation",
             "admin_entities": "Administrator-only entities",
+            "location_private": "Location is private",
+            "todo_list": "To-do list",
+            "calendars": "Calendars",
+            "todo_private": "To-do list is private",
             "notify_service": "Message action"
           },
           "data_description": {
+            "person_entity": "Only people linked to a user account are listed.",
             "address_as": "Optional. Used when speaking directly to this person; leave blank to use the first name on the account.",
             "third_person_reference": "Optional. Used in tool results and when speaking about this person rather than to them; if blank, the configured address form or first name is used (for example, The father).",
             "entity_aliases": "Optional. Add one line per assigned entity in the format entity_id: alias, another alias. The first alias becomes its preferred name; remaining aliases are alternate names. Calendar tools accept any alias when selecting a calendar.",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App. The agent uses them for requests like \"What's on my calendar?\" or \"What is Sarah doing on Friday?\".",
-            "private_entities": "Entities from the list above that only this person may use. Anyone else is refused by the calendar and location tools, and the agent is not told about them.",
+            "private_entities": "Entities or calendars from the lists above that only this person may use. Anyone else is refused by the calendar and location tools, and the agent is not told about them.",
             "confirm_entities": "Entities from the list above where any action needs a spoken yes first, for example a heater or a door opener. Locks, alarm panels, and garage door, gate and door covers always need one, except for locking, arming, closing and stopping.",
             "admin_entities": "Entities from the list above that only Home Assistant administrators can control through this integration. Anyone can still read their state.",
+            "location_private": "Only this person can read their location from their person entity. Anyone else is refused, and the agent is not told about it.",
+            "todo_list": "Optional. This person's one to-do list. The agent calls it \"your to-do list\" or \"[name]'s to-do list\". Set it here rather than in the Entities list.",
+            "todo_private": "Only this person can read or change their to-do list. Anyone else is refused, and the agent is not told about it.",
+            "calendars": "Optional. This person's calendars. To make one private, add it to Private entities. Set calendars here rather than in the Entities list.",
             "notify_service": "Optional. The notify action used when someone asks the agent to send this person a message, for example the Companion App's notify.mobile_app_ action for their phone. Notify entities in the Entities list are used too."
           },
           "description_placeholders": {
@@ -57,7 +66,9 @@
         },
         "reconfigure": {
           "title": "Change person",
+          "description": "{person_header}",
           "data": {
+            "person_entity": "Person",
             "address_as": "Address as",
             "third_person_reference": "Third-person reference",
             "entities": "Entities",
@@ -65,6 +76,10 @@
             "private_entities": "Private entities",
             "confirm_entities": "Entities that need confirmation",
             "admin_entities": "Administrator-only entities",
+            "location_private": "Location is private",
+            "todo_list": "To-do list",
+            "calendars": "Calendars",
+            "todo_private": "To-do list is private",
             "notify_service": "Message action"
           },
           "data_description": {
@@ -72,9 +87,13 @@
             "third_person_reference": "Optional. Used in tool results and when speaking about this person rather than to them; if blank, the configured address form or first name is used (for example, The father).",
             "entity_aliases": "Optional. Add one line per assigned entity in the format entity_id: alias, another alias. The first alias becomes its preferred name; remaining aliases are alternate names. Calendar tools accept any alias when selecting a calendar.",
             "entities": "Entities that belong to this person, such as their calendars and their phone from the Companion App.",
-            "private_entities": "Entities from the list above that only this person may use.",
+            "private_entities": "Entities or calendars from the lists above that only this person may use.",
             "confirm_entities": "Entities from the list above where any action needs a spoken yes first, for example a heater or a door opener. Locks, alarm panels, and garage door, gate and door covers always need one, except for locking, arming, closing and stopping.",
             "admin_entities": "Entities from the list above that only Home Assistant administrators can control through this integration. Anyone can still read their state.",
+            "location_private": "Only this person can read their location from their person entity. Anyone else is refused, and the agent is not told about it.",
+            "todo_list": "Optional. This person's one to-do list. The agent calls it \"your to-do list\" or \"[name]'s to-do list\". Set it here rather than in the Entities list.",
+            "todo_private": "Only this person can read or change their to-do list. Anyone else is refused, and the agent is not told about it.",
+            "calendars": "Optional. This person's calendars. To make one private, add it to Private entities. Set calendars here rather than in the Entities list.",
             "notify_service": "Optional. The notify action used when someone asks the agent to send this person a message, for example the Companion App's notify.mobile_app_ action for their phone. Notify entities in the Entities list are used too."
           },
           "description_placeholders": {
@@ -83,8 +102,12 @@
         }
       },
       "error": {
-        "already_configured": "That account has already been added.",
-        "private_not_assigned": "Every private entity must also be in the Entities list.",
+        "already_configured": "That person or their account has already been added.",
+        "person_without_account": "That person is not linked to a Home Assistant user account. Link one under Settings > People first.",
+        "calendar_in_entities": "Calendars go in the Calendars field, not the Entities list.",
+        "person_in_entities": "The person entity comes from the Person field. Remove person entities from the Entities list.",
+        "todo_in_entities": "To-do lists go in the To-do list field, not the Entities list.",
+        "private_not_assigned": "Every private entity must also be in the Entities list or the Calendars field.",
         "invalid_entity_aliases": "Each alias line must use entity_id: alias, and the entity must be assigned to this person.",
         "base": {
           "entity_warnings_acknowledge": "Review the entity warnings below and submit again to keep these assignments."
@@ -236,6 +259,10 @@
     "stale_entities": {
       "title": "{name} refers to entities that no longer exist",
       "description": "The Speaker Recognition Tools settings for {name} include entities that are no longer in Home Assistant: {entities}. They are left out of the prompt and tools. Open Speaker Recognition Tools under Settings > Devices & services, and edit {name} to remove or replace them. Renamed entities are updated automatically."
+    },
+    "missing_person": {
+      "title": "{name} has no person entity",
+      "description": "Speaker Recognition Tools now builds each speaking person on their person entity, but no person is linked to {name}'s user account, so their location is not available. Link a person to that account under Settings > People, then open Speaker Recognition Tools under Settings > Devices & services, edit {name} and pick the person."
     },
     "missing_account": {
       "title": "{name} has no usable user account",

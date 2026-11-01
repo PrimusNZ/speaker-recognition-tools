@@ -16,7 +16,11 @@ from .calendar_tools import (
     UpdateCalendarEventTool,
 )
 from .entity_tools import ControlAssignedEntityTool, GetEntityStateTool
-from .location_tools import GetPersonLocationHistoryTool, GetPersonLocationTool
+from .location_tools import (
+    GetDeviceLocationTool,
+    GetPersonLocationHistoryTool,
+    GetPersonLocationTool,
+)
 from .message_tools import SendMessageToPersonTool
 from .prompt import Person
 from .todo_tools import (
@@ -44,6 +48,7 @@ def build_tools(
         DeleteCalendarEventTool(household),
         GetPersonLocationTool(household),
         GetPersonLocationHistoryTool(household),
+        GetDeviceLocationTool(household),
         GetTodoItemsTool(household),
         AddTodoItemTool(household),
         UpdateTodoItemTool(household),

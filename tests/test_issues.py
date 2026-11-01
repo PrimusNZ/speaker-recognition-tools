@@ -20,7 +20,9 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_LINK_ACTION_ENTITY,
     CONF_LINK_NAME,
     CONF_LINK_STATE_ENTITY,
+    CONF_PERSON_ENTITY,
     CONF_PRIVATE_ENTITIES,
+    CONF_TODO_LIST,
     CONF_TOOL_TYPE,
     CONF_USER_ID,
     DOMAIN,
@@ -31,12 +33,20 @@ from custom_components.speaker_recognition_tools.const import (
 
 
 async def _setup(hass: HomeAssistant, user_id: str, entities: list[str], **extra):
+    hass.states.async_set(
+        "person.sam", "home", {"user_id": user_id, "friendly_name": "Sam"}
+    )
     subentries = [
         ConfigSubentryData(
             subentry_type=SUBENTRY_SPEAKER,
             title="Sam",
             unique_id=user_id,
-            data={CONF_USER_ID: user_id, CONF_ENTITIES: entities, **extra},
+            data={
+                CONF_PERSON_ENTITY: "person.sam",
+                CONF_USER_ID: user_id,
+                CONF_ENTITIES: entities,
+                **extra,
+            },
         ),
         ConfigSubentryData(
             subentry_type=SUBENTRY_ENTITY_LINK,
@@ -92,7 +102,7 @@ async def test_missing_entities_raise_one_issue_per_person(hass: HomeAssistant):
     (issue,) = issues.values()
     assert issue.translation_key == "stale_entities"
     assert issue.translation_placeholders == {
-        "name": "Sam",
+        "name": "Sam (3 entities)",
         "entities": "calendar.gone, sensor.gone",
     }
 
@@ -129,7 +139,7 @@ async def test_linked_device_entities_are_checked(hass: HomeAssistant):
     await _setup(hass, user.id, [])
     (issue,) = _our_issues(hass).values()
     assert issue.translation_placeholders == {
-        "name": "Demo unit",
+        "name": "Demo unit (Sam)",
         "entities": "button.demo_action",
     }
 
@@ -146,7 +156,7 @@ async def test_deleted_account_raises_an_issue(hass: HomeAssistant):
     await _recheck(hass)
     (issue,) = _our_issues(hass).values()
     assert issue.translation_key == "missing_account"
-    assert issue.translation_placeholders == {"name": "Sam"}
+    assert issue.translation_placeholders == {"name": "Sam (no entities)"}
 
 
 async def test_renamed_entity_is_followed_in_every_setting(hass: HomeAssistant):
@@ -192,3 +202,53 @@ async def test_removing_the_entry_clears_its_issues(hass: HomeAssistant):
     assert await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
     assert not _our_issues(hass)
+
+
+async def test_renamed_to_do_list_is_followed(hass: HomeAssistant):
+    user = await hass.auth.async_create_user("Sam Sample")
+    registry = er.async_get(hass)
+    todo = registry.async_get_or_create(
+        "todo", "test", "jobs", suggested_object_id="old_jobs"
+    )
+    entry = await _setup(hass, user.id, [], **{CONF_TODO_LIST: todo.entity_id})
+
+    registry.async_update_entity(todo.entity_id, new_entity_id="todo.new_jobs")
+    await _recheck(hass)
+
+    assert _subentry(entry, SUBENTRY_SPEAKER).data[CONF_TODO_LIST] == "todo.new_jobs"
+
+
+async def test_missing_to_do_list_raises_an_issue(hass: HomeAssistant):
+    user = await hass.auth.async_create_user("Sam Sample")
+    await _setup(hass, user.id, [], **{CONF_TODO_LIST: "todo.gone"})
+    await _recheck(hass)
+    person_issue = next(
+        i
+        for i in _our_issues(hass).values()
+        if i.translation_placeholders.get("name", "").startswith("Sam")
+    )
+    assert "todo.gone" in person_issue.translation_placeholders["entities"]
+
+
+async def test_person_without_a_person_entity_raises_an_issue(hass: HomeAssistant):
+    user = await hass.auth.async_create_user("Sam Sample")
+    await _setup(hass, user.id, [], **{CONF_PERSON_ENTITY: None})
+    await _recheck(hass)
+    assert [
+        i.translation_key
+        for i in _our_issues(hass).values()
+        if i.translation_placeholders.get("name", "").startswith("Sam")
+    ] == ["missing_person"]
+
+
+async def test_listed_name_follows_the_person_entity(hass: HomeAssistant):
+    user = await hass.auth.async_create_user("Sam Sample")
+    entry = await _setup(hass, user.id, [])
+    assert _subentry(entry, SUBENTRY_SPEAKER).title == "Sam (no entities)"
+
+    hass.states.async_set(
+        "person.sam", "home", {"user_id": user.id, "friendly_name": "Samuel Sample"}
+    )
+    hass.config_entries.async_update_entry(entry, title=entry.title)
+    await _recheck(hass)
+    assert _subentry(entry, SUBENTRY_SPEAKER).title == "Samuel Sample (no entities)"

@@ -111,7 +111,7 @@ class SpeakingPersonAPI(llm.API):
         data = {
             "recognised": speaker is not None,
             "user_id": speaker.user_id if speaker else None,
-            "name": speaker.name if speaker else None,
+            "name": (speaker.full_name or speaker.name) if speaker else None,
             "address_as": speaker.direct_address if speaker else None,
             "device_id": llm_context.device_id,
             "device": device_name,

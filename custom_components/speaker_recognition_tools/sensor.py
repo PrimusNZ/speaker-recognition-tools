@@ -25,7 +25,7 @@ async def async_setup_entry(
 
 
 class LastSpeakerSensor(SensorEntity):
-    """The first name of the last person who spoke, or unknown_speaker."""
+    """The person name of the last person who spoke, or unknown_speaker."""
 
     _attr_has_entity_name = True
     _attr_translation_key = "last_speaker"

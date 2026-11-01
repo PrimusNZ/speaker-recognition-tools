@@ -120,7 +120,7 @@ async def _get_user_level(hass: HomeAssistant, call: ServiceCall) -> ServiceResp
             found=True,
             is_admin=person.is_admin,
             user_id=person.user_id,
-            name=person.name,
+            name=person.full_name or person.name,
             address_as=person.direct_address,
             configured=True,
         )
@@ -135,22 +135,21 @@ async def _get_user_level(hass: HomeAssistant, call: ServiceCall) -> ServiceResp
             found=True,
             is_admin=person.is_admin,
             user_id=person.user_id,
-            name=person.name,
+            name=person.full_name or person.name,
             address_as=person.direct_address,
             configured=True,
         )
-    # Not a configured person: still report the account's level, first name only.
+    # Not a configured person: still report the account's level and name.
     account = await hass.auth.async_get_user(user_id)
     if account is None:
         return _answer(
             found=False, user_id=user_id, address_as=unknown, reason="unknown_user"
         )
-    parts = (account.name or "").split()
     return _answer(
         found=True,
         is_admin=account.is_admin,
         user_id=account.id,
-        name=parts[0] if parts else None,
+        name=account.name or None,
         address_as=unknown,
     )
 

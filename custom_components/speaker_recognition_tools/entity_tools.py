@@ -73,7 +73,8 @@ class GetEntityStateTool(_PersonTool):
         "assigned to that person; private entities can only be read by their owner. "
         "For a linked device, its spoken name or any alias resolves to the status entity here. "
         "The result may include its configured Home Assistant area and state attributes. "
-        "Use get_person_location for a person's presence, zones and addresses, and "
+        "Use get_person_location for a person's presence, zones and addresses, "
+        "get_device_location for where a phone or tracked device is, and "
         "calendar tools for calendar events. Do not infer a room from a home state alone."
     )
     annotations = _READ_ONLY

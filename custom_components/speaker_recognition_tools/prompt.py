@@ -28,6 +28,10 @@ class Person(NamedTuple):
     confirm: frozenset[str] = frozenset()  # entity ids whose actions need a yes
     admin_only: frozenset[str] = frozenset()  # entity ids only admins may control
     notify_service: str | None = None  # notify action used to message this person
+    todo_list: str | None = None  # the person's one to-do list
+    todo_private: bool = False  # only this person may use their to-do list
+    person_entity: str | None = None  # the person entity this person is built on
+    full_name: str | None = None  # the person entity's name; never shown to the model
 
     @property
     def direct_address(self) -> str:
@@ -58,7 +62,6 @@ class Person(NamedTuple):
 
 _GROUPS = (
     ("Calendars", {"calendar"}),
-    ("To-do lists", {"todo"}),
     ("Devices", {"device_tracker", "sensor", "binary_sensor", "person"}),
 )
 
@@ -93,19 +96,36 @@ def _line(
     return text
 
 
+def _todo_text(person: Person, current: bool) -> str:
+    """Show a person's one to-do list, unless it is private to someone else."""
+    if not person.todo_list or (person.todo_private and not current):
+        return ""
+    return f"To-do list: {person.todo_list}"
+
+
 def _person_block(person: Person, current: bool) -> str:
     heading = _label(person.name, person.direct_address)
     block_heading = f"### {heading}{' [current speaker]' if current else ''}"
+    # A private person entity is left out for everyone but its owner.
+    if person.person_entity and (current or person.person_entity not in person.private):
+        block_heading += f"\nPerson: {person.person_entity}"
     block_heading += f"\nUser Level: {'Administrator' if person.is_admin else 'User'}"
     if person.third_person_form != person.direct_address:
         block_heading += f"\nThird-person reference: {person.third_person_form}"
     # Other people's private entities are never shown.
-    visible = [e for e in person.entities if current or e[0] not in person.private]
+    visible = [
+        e
+        for e in person.entities
+        if (current or e[0] not in person.private) and e[0] != person.person_entity
+    ]
+    todo_text = _todo_text(person, current)
     if not visible:
         entity_text = "(no entities)"
         link_text = _linked_devices_text(person, current)
-        return f"{block_heading}\n{entity_text}" + (
-            f"\n\n{link_text}" if link_text else ""
+        return (
+            f"{block_heading}\n{entity_text}"
+            + (f"\n\n{todo_text}" if todo_text else "")
+            + (f"\n\n{link_text}" if link_text else "")
         )
     # A blank line between groups keeps a markdown renderer from folding the next
     # group's heading into the last list item.
@@ -127,6 +147,7 @@ def _person_block(person: Person, current: bool) -> str:
         block_heading
         + "\n"
         + "\n\n".join(groups)
+        + (f"\n\n{todo_text}" if todo_text else "")
         + (f"\n\n{link_text}" if link_text else "")
     )
 
@@ -187,7 +208,7 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
         f"{_ADDRESSING_RULES}"
     )
     intro += f' "my", "me" or "I" means {me.direct_address}, the current speaker.'
-    if any(p.entities or p.entity_links for p in people):
+    if any(p.entities or p.entity_links or p.todo_list for p in people):
         intro += (
             " The first alias shown for an entity is its preferred name; any other "
             "aliases shown for it are alternate names for that same entity. A linked "
@@ -207,9 +228,10 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "to find events by title, check_calendar_availability to check "
             "a time window, and create_calendar_event, update_calendar_event "
             "or delete_calendar_event to make calendar changes. Use "
-            "get_todo_items to read a person's own to-do lists, and "
+            "get_todo_items to read a person's to-do list, and "
             "add_todo_item, update_todo_item or remove_todo_item to change "
-            "them. Use send_message_to_person to send someone a message on "
+            "it. Each person has at most one to-do list; call it \"your to-do "
+            "list\" or \"[name]'s to-do list\", never by its entity name. Use send_message_to_person to send someone a message on "
             "their phone. Every calendar change, to-do change and message, "
             "and some device actions, require a preview and an explicit yes "
             "from the speaker before the second tool call; never confirm on "
@@ -221,13 +243,15 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
             "spoken name resolves to its status entity with get_entity_state "
             "and its action entity with control_assigned_entity. Never use the generic "
             "entity-control tool to change a calendar. Use "
-            "get_person_location for current locations and "
+            "get_person_location for current locations, which uses the "
+            "person entity on each person's Person line, and "
             "get_person_location_history for recorded locations and arrivals "
-            "or departures. When a tool "
+            "or departures. Use get_device_location for where a person's "
+            "phone or other tracked device is, including the room when known. "
+            "When a tool "
             "asks for a choice, ask the speaker as a question that ends with a "
             "question mark, then call the tool again with the chosen entity ID "
-            "or alias in the relevant argument; calendar tools use calendars "
-            "and to-do tools use lists."
+            "or alias in the relevant argument; calendar tools use calendars."
         )
     ordered = _alphabetical(people)
     blocks = "\n\n".join(_person_block(p, p is me) for p in ordered)

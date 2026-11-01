@@ -3,6 +3,22 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.1] - 2026-11-02
+
+### Added
+
+- Add `get_device_location`, which answers "where is my phone?" and "where is Sarah's phone?". It uses the person's assigned device trackers and the trackers of their assigned person entity, and gives the room (Home Assistant area) when the device is at home and a room is known from any integration that reports areas, such as Bermuda. A Companion App phone and the BLE beacon tracker for its transmitter, both on the person entity, are reported as one device. Otherwise it gives the zone, or the street name and town outside every zone.
+
+### Changed
+
+- Build each speaking person on a **Person** (`person` entity) instead of a user account. The account comes from the person, and the person entity belongs to them automatically: it is used for their location and shown as a `Person:` line at the top of their prompt block. A new **Location is private** switch keeps their location to themselves. The entity list no longer accepts person entities. Existing people move onto the person linked to their account the first time this version loads, dropping any person entity assigned by hand and keeping it private if it was. Anyone with no matching person gets a Repairs issue and can pick one by editing them.
+- Show the person's name as a heading at the top of their edit form.
+- Use the person's name, not the first name, for the **Last speaker** sensor's state, the `name` in the `speaker_recognition_tools_speaker` event and the `name` returned by `get_user_level`. Automations that compare these with a first name need updating. First names are now only used in the prompt and other text the model sees.
+- List each speaking person, and each linked device's person, under the person's name instead of their account's first name. This covers the linked-device person picker too. Existing entries are renamed automatically, and follow later changes to the person's name.
+- Add a **Calendars** field for each person's calendars. To make a calendar private, add it to Private entities, as before; entity aliases work for calendars too. The entity list no longer accepts calendars, and existing calendars move to the new field when this version first loads, keeping their private and alias settings.
+- Reorder the person form: Location is private and To-do list is private come first, then Address as, Third-person reference, Entities, Entity aliases, To-do list, Calendars, Private entities, Entities that need confirmation, Administrator-only entities and Message action.
+- Give each person one to-do list, set in a new **To-do list** field with a **To-do list is private** switch, instead of to-do lists in the entity list. The to-do tools no longer ask which list to use, and the agent calls it "your to-do list" or "[name]'s to-do list". People set up earlier keep their first assigned to-do list and its private setting; any other to-do lists they had are no longer used. The entity list no longer accepts to-do lists.
+
 ## [0.10.0] - 2026-11-02
 
 ### Added
