@@ -575,11 +575,23 @@ def _beacon_device(
     return None
 
 
-def _no_device_address_note(speaker: Person, target: Person, device: str) -> str:
-    """The reply the agent must give when no exact address is known for a device."""
-    whose = (
+def _whose(speaker: Person, target: Person) -> str:
+    return (
         "your" if target.user_id == speaker.user_id else f"{target.third_person_form}'s"
     )
+
+
+def _home_note(speaker: Person, target: Person, device: str) -> str:
+    """What the agent says when a device is home and no room is known."""
+    return (
+        f"Tell the speaker that {_whose(speaker, target)} {device} is at home. "
+        "Say nothing else about where in the house it is."
+    )
+
+
+def _no_device_address_note(speaker: Person, target: Person, device: str) -> str:
+    """The reply the agent must give when no exact address is known for a device."""
+    whose = _whose(speaker, target)
     return (
         f'Reply with exactly: "Sorry {speaker.direct_address}, An exact address for '
         f'{whose} {device} is unknown." Add nothing else and do not guess where it is.'
@@ -602,7 +614,7 @@ class GetDeviceLocationTool(_PersonTool):
         "Assistant area it is in; say that room. Otherwise location is its zone, "
         "or its street name and town when it is outside every zone. Each result "
         "has since_spoken, ready to say aloud. Follow any room_note or "
-        "address_note exactly and never guess a room or a place. A private "
+        "address_note exactly and never guess a place. A private "
         "device can only be located by its owner. If a person's location is "
         "private, a device at home still gives its room or 'home', but a device "
         "away from home returns a privacy note: follow it and reveal nothing "
@@ -793,10 +805,7 @@ class GetDeviceLocationTool(_PersonTool):
                         self.household.speaker, person, name
                     )
             elif location == "home":
-                result["room_note"] = (
-                    f"No room is known for this {name}. Say it is at home and do "
-                    "not guess a room."
-                )
+                result["room_note"] = _home_note(self.household.speaker, person, name)
             if (
                 state is not None
                 and "address_note" not in result

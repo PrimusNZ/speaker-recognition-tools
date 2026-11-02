@@ -3,6 +3,15 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.2.1] - 2026-11-02
+
+### Changed
+
+- Rewrite the README to be shorter and plainer, and move the technical details into `docs/reference.md`. The text was checked against how the integration works now, and corrections include: person entities and their linked phones are shared automatically and are not entities to assign, Speaking Device also gives the area, the entity mappings section always appears for recognised speakers, and it is installed through HACS.
+- Remove `EXAMPLE_PROMPT.txt`. The README now has the one paragraph to paste into your agent's prompt, in a code block.
+- Use "The breadwinner" as the third-person reference example in the form help text and the README, and a to-do list example that suits a personal list.
+- When a device is at home and no room is known, `get_device_location` now tells the agent to say the device is at home, naming the person and the device, and nothing else about where in the house it is.
+
 ## [0.10.2] - 2026-11-02
 
 ### Changed

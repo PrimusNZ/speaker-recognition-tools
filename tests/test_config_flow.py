@@ -313,11 +313,11 @@ async def test_add_person_with_third_person_reference(hass: HomeAssistant) -> No
     entry = await _person_entry(hass)
     user = await _user(hass, "James")
     result = await _add_person(
-        hass, entry, user.id, "Dad", third_person_reference="The father"
+        hass, entry, user.id, "Dad", third_person_reference="The breadwinner"
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     sub = next(iter(entry.subentries.values()))
-    assert sub.data[CONF_THIRD_PERSON_REFERENCE] == "The father"
+    assert sub.data[CONF_THIRD_PERSON_REFERENCE] == "The breadwinner"
 
 
 async def test_add_person_duplicate_user_rejected(hass: HomeAssistant) -> None:
@@ -775,11 +775,11 @@ async def test_reconfigure_person_third_person_reference(hass: HomeAssistant) ->
         sub_id,
         {
             CONF_ADDRESS_AS: "Dad",
-            CONF_THIRD_PERSON_REFERENCE: "The father",
+            CONF_THIRD_PERSON_REFERENCE: "The breadwinner",
             CONF_ENTITIES: [],
         },
     )
-    assert entry.subentries[sub_id].data[CONF_THIRD_PERSON_REFERENCE] == "The father"
+    assert entry.subentries[sub_id].data[CONF_THIRD_PERSON_REFERENCE] == "The breadwinner"
 
 
 async def test_reconfigure_can_clear_entities(hass: HomeAssistant) -> None:

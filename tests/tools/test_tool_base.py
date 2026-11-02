@@ -16,15 +16,15 @@ from tests.tools.helpers import (
 
 def test_household_uses_third_person_reference_for_other_people():
     speaker = Person("u1", "Sarah", "Mum", third_person_reference="The mother")
-    target = Person("u2", "James", "Dad", third_person_reference="The father")
+    target = Person("u2", "James", "Dad", third_person_reference="The breadwinner")
     household = tool_base.Household([speaker, target], speaker)
-    found, problems = household.find(["The father"])
+    found, problems = household.find(["The breadwinner"])
     assert not problems
     assert found == [target]
     assert household.reference(speaker) == "The mother"
-    assert household.reference(target) == "The father"
+    assert household.reference(target) == "The breadwinner"
     assert (
-        "An exact address for The father is unknown."
+        "An exact address for The breadwinner is unknown."
         in location_tools._no_address_note(speaker, target)
     )
 

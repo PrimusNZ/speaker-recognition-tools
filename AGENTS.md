@@ -10,7 +10,7 @@ Make no change at all unless the user has expressly told you to proceed. This co
 
 A Home Assistant custom integration (`speaker_recognition_tools`, distributed through HACS). Repository: `PrimusNZ/speaker-recognition-tools`. It adds two LLM APIs for conversation agents: Speaking Person and Speaking Device. They tell the agent who is speaking and which device they are using. It depends on the separate Speaker Recognition project, which sets the Home Assistant user for each request. This integration only reads that result.
 
-See `README.md` for behaviour and `EXAMPLE_PROMPT.txt` for the sample conversation prompt.
+See `README.md` for behaviour and `docs/reference.md` for the technical details.
 
 ## Layout
 
@@ -65,9 +65,9 @@ After changes, run `.venv/bin/ruff check .` and `npm run format:check`. If Prett
 - Privacy is enforced in the tools, not just the prompt. A private entity can be read or written only by its owner, and other people's private entities are left out of prompts. Keep that true for any new tool.
 - Calendar, to-do and message changes take two calls: a preview with a confirmation token, then the change. `control_assigned_entity` does the same for sensitive actions, for entities marked as needing confirmation, and when recognition confidence is low. Use `_PersonTool._confirm` for any new write tool.
 - Administrator-only entities are enforced in the tools from `Person.is_admin`. Keep that check for any new tool that controls entities.
-- Fixed reply wording belongs in tool results (for example "reply with exactly ..."), not in `EXAMPLE_PROMPT.txt`. Edit `EXAMPLE_PROMPT.txt` only when absolutely needed, such as removing a line that now conflicts with a tool. Do not modify the user's live conversation prompt unless explicitly asked.
+- Fixed reply wording belongs in tool results (for example "reply with exactly ..."), not in the prompt paragraph in the README. Do not modify the user's live conversation prompt unless explicitly asked.
 - A tool result or prompt text is an instruction to the model, not enforcement. Say so in docs.
-- Update `README.md` when behaviour, tools or prompt sections change. Keep the warnings about entities bypassing Assist's exposed-entities setting accurate.
+- Update `README.md` and `docs/reference.md` when behaviour, tools or prompt sections change. Keep the warnings about entities bypassing Assist's exposed-entities setting accurate.
 - Keep prompt-caching guidance provider-neutral unless asked otherwise. Home Assistant appends selected APIs at the bottom of the conversation prompt in the order they were added; this integration cannot choose that order.
 - Location history requires Home Assistant Recorder history and is limited to 31 days.
 

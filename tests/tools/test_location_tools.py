@@ -632,7 +632,9 @@ async def test_unregistered_tracker_from_the_person_entity_is_a_device(
     result = await _devices(hass, users["Sarah"], people=["Dad"])
     by_id = {d["entity_id"]: d for d in result["devices"]}
     assert by_id["device_tracker.other"]["device"] == "device"
-    assert by_id["device_tracker.other"]["room_note"].startswith("No room is known")
+    assert by_id["device_tracker.other"]["room_note"].startswith(
+        "Tell the speaker that Dad's device is at home."
+    )
     assert "James Example" not in str(result)
 
 
@@ -659,7 +661,11 @@ async def test_unknown_room_says_home_without_guessing(hass, users) -> None:
     device = (await _devices(hass, users["James"]))["devices"][0]
     assert "room" not in device
     assert device["location"] == "home"
-    assert "do not guess a room" in device["room_note"]
+    assert device["room_note"] == (
+        "Tell the speaker that your james phone is at home. "
+        "Say nothing else about where in the house it is."
+    )
+    assert "room" not in device["room_note"].replace("in the house", "")
 
 
 async def test_away_phone_without_address_gets_exact_reply(hass, users) -> None:

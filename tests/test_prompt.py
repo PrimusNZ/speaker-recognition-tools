@@ -55,7 +55,7 @@ def test_known_speaker_without_user_name(prompt):
 
 def test_third_person_reference_is_separate_from_direct_address(prompt):
     people = [
-        prompt.Person("u1", "James", "Dad", third_person_reference="The father"),
+        prompt.Person("u1", "James", "Dad", third_person_reference="The breadwinner"),
         prompt.Person("u2", "Alex", "Mum", third_person_reference="The mother"),
     ]
     text = person(
@@ -72,7 +72,7 @@ def test_third_person_reference_is_separate_from_direct_address(prompt):
         in text
     )
     assert "including in tool results" in text
-    assert "Third-person reference: The father" in text
+    assert "Third-person reference: The breadwinner" in text
     assert (
         "if none is set, use their configured form of address; if none is set, use their first name"
         in text
@@ -101,7 +101,7 @@ def test_reference_falls_back_to_address_as_then_name(prompt):
     assert 'answer exactly "Your name is James."' in text
 
     titled_by_reference = prompt.Person(
-        "u3", "James", "", third_person_reference="The father"
+        "u3", "James", "", third_person_reference="The breadwinner"
     )
     text = person(
         prompt,
@@ -111,9 +111,9 @@ def test_reference_falls_back_to_address_as_then_name(prompt):
         people=[titled_by_reference],
     )
     assert "Address them as James." in text
-    assert "Address them as The father." not in text
-    assert "For this speaker, the third-person form is The father." in text
-    assert 'answer exactly "You are The father, and your name is James."' in text
+    assert "Address them as The breadwinner." not in text
+    assert "For this speaker, the third-person form is The breadwinner." in text
+    assert 'answer exactly "You are The breadwinner, and your name is James."' in text
 
     missing_name = prompt.Person("u4", None, "Dad")
     text = person(
