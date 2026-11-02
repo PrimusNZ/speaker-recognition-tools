@@ -9,6 +9,14 @@ It adds two options for your conversation agent:
 
 > **Needs Speaker Recognition.** This integration reads the result of the **[Speaker Recognition](https://github.com/conorod1992/speaker-recognition)** project, which identifies the voice and sets the Home Assistant user for each request. Install and train that first. Without it, everyone is treated as unknown.
 
+## Security disclaimer
+
+This integration is provided as is, without warranty, and you use it at your own risk.
+
+Voice recognition is reliable but not infallible. A voice can be misrecognised, or not recognised at all. A voice that isn't recognised is treated as unknown, which with **Deny unknown speakers** on means a refusal. The model can also misunderstand or ignore instructions, and rules such as "ask for a yes first" are instructions to the model, not locks.
+
+**Don't assign anything to a person that you wouldn't want compromised if the agent doesn't follow its instructions.** Anything you give a person can be read, and in many cases changed, by the agent. Don't rely on this integration as the only protection for anything important, such as door locks, alarm panels or private information. You are responsible for what you share with your agent and for what it is allowed to do.
+
 ## Before you start
 
 Please read this. The agent's model may be a cloud service, and these tools hand it real information about your home.
@@ -31,6 +39,18 @@ Please read this. The agent's model may be a cloud service, and these tools hand
 
    Treat those sections as correct. Never guess who is speaking.
    ```
+
+   If your prompt gives examples of how to address the speaker, write `[direct address]` where their name or title goes. The added text tells the agent to use the speaker's form of address in its place.
+
+## Prompt caching
+
+Who is speaking, and which device they're using, change from request to request. If your AI provider caches prompts, you can still benefit from the part that stays the same, as long as the changing parts come last.
+
+- Add Speaking Person and Speaking Device to your agent's list of APIs **after** any APIs with fixed instructions. Home Assistant adds them to the prompt in the order you added them.
+- Keep your own prompt and your model choice stable.
+- Recognised speakers get tools and unrecognised ones don't, so those requests may not share a cache.
+
+Caching also needs the stable part to be long enough for your provider, and it's never guaranteed. See the [reference](docs/reference.md#prompt-caching) for more.
 
 ## Add your people
 
@@ -68,6 +88,16 @@ The settings (gear icon) cover how unknown speakers are addressed, **Deny unknow
 
 Anything that changes something takes a preview and a yes. Locks, alarm panels and garage doors also ask before opening or disarming.
 
+## Good to know
+
+- **Rooms for "Where is my phone?"** A room is only given when something reports one, such as an area sensor on the phone's device like the Area sensor from [Bermuda](https://github.com/agittins/bermuda). For a Companion App phone, turn on the app's BLE transmitter sensor, track that beacon with a Bluetooth tracking integration, and add the beacon's tracker to the person in Settings > People. Without a room, the agent just says the phone is at home.
+- **Location history** ("When did Sarah leave?") needs the Home Assistant Recorder and looks back at most 31 days.
+- **Which actions ask for a yes first:** unlocking, disarming an alarm panel, opening a door, gate or garage door, anything on a person's **Entities that need confirmation** list or a linked device with **Actions need confirmation**, and every change when recognition confidence is below the minimum you set. Calendar, to-do and message changes always ask.
+- **Your own prompt** is plain text, not a template, and Home Assistant wraps each API's text in its own "Follow these instructions" lines.
+- **A misrecognised voice** is treated as unknown. With **Deny unknown speakers** on, that means a refusal.
+- **For automations and scripts:** the **Last speaker** sensor and the `speaker_recognition_tools_speaker` event say who spoke and where, and the `speaker_recognition_tools.get_user_level` action tells a script whether someone is an administrator.
+- **Upgrading from an older version:** people are moved onto their person entity, and calendars move to the **Calendars** field, the first time the new version loads. Anyone without a matching person gets a repair notice. Link a person to their account in Settings > People, then edit them and pick it.
+
 ## More
 
 - [Reference](docs/reference.md): what is added to the prompt, every tool, privacy and confirmation details, the Last speaker sensor and event, the `get_user_level` action for scripts, repairs, and tips on prompt caching.
@@ -75,4 +105,24 @@ Anything that changes something takes a preview and a yes. Locks, alarm panels a
 
 ## Licence
 
-MIT
+MIT License
+
+Copyright (c) 2026 Primus
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

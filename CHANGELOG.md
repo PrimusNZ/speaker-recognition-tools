@@ -3,6 +3,13 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.2.2] - 2026-11-02
+
+### Changed
+
+- Add a Security disclaimer to the top of the README, and replace "MIT" in its Licence section with the full licence text.
+- Add a Prompt caching section and a Good to know section to the README, covering rooms for "Where is my phone?", location history limits, which actions ask for a yes, the `[direct address]` placeholder, upgrading, and the sensor, event and action for automations.
+
 ## [0.10.2.1] - 2026-11-02
 
 ### Changed

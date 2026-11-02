@@ -36,6 +36,8 @@ Only first names go into the prompt and into anything else the model reads, neve
 - **Direct address** uses **Address as**, or the first name when it is blank. A third-person reference is never used to address someone directly.
 - **Third-person references** use **Third-person reference**, then **Address as**, then the first name.
 - People can be identified by first name, **Address as** or third-person reference. They all mean the same person. "Me" means the current speaker.
+- Where your prompt shows `[direct address]` in an example or a rule, the added text tells the agent to read it as the current speaker's form of address. It is an instruction to the model, not a text substitution.
+- The added text is plain, not Jinja, and Home Assistant wraps each API's text as "Follow these instructions for tools from ...".
 
 ## Tools
 
