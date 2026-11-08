@@ -38,6 +38,8 @@ from .const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
+    CONF_HOUSEHOLD_ALIASES,
+    CONF_HOUSEHOLD_DEVICES,
     CONF_LEGACY_ADDRESS_AS,
     CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_LINK_ACTION_ENTITY,
@@ -68,8 +70,11 @@ from .const import (
     TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
 )
+from .household_tools import household_devices
 from .people import (
     async_configured_people,
+    household_aliases,
+    household_entity_ids,
     is_calendar,
     is_person,
     is_todo,
@@ -178,15 +183,42 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         opts = self.config_entry.options
+        errors: dict[str, str] = {}
         if user_input is not None:
-            options = {**opts, **user_input}
-            options.pop(CONF_LEGACY_UNKNOWN_ADDRESS_AS, None)
-            return self.async_create_entry(data=options)
+            devices = user_input.get(CONF_HOUSEHOLD_DEVICES, [])
+            parsed = _parse_entity_aliases(
+                user_input.get(CONF_HOUSEHOLD_ALIASES, ""), devices
+            )
+            if parsed is None:
+                errors[CONF_HOUSEHOLD_ALIASES] = "invalid_household_aliases"
+                opts = {**opts, **user_input}
+            else:
+                options = {**opts, **user_input}
+                options[CONF_HOUSEHOLD_DEVICES] = devices
+                options[CONF_HOUSEHOLD_ALIASES] = parsed
+                options.pop(CONF_LEGACY_UNKNOWN_ADDRESS_AS, None)
+                return self.async_create_entry(data=options)
         schema = vol.Schema(
             {
                 vol.Required(
                     CONF_DENY_UNKNOWN, default=opts.get(CONF_DENY_UNKNOWN, False)
                 ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_HOUSEHOLD_DEVICES,
+                    description={
+                        "suggested_value": opts.get(CONF_HOUSEHOLD_DEVICES, [])
+                    },
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(multiple=True)
+                ),
+                vol.Optional(
+                    CONF_HOUSEHOLD_ALIASES,
+                    description={
+                        "suggested_value": opts[CONF_HOUSEHOLD_ALIASES]
+                        if isinstance(opts.get(CONF_HOUSEHOLD_ALIASES), str)
+                        else _entity_aliases_text(opts.get(CONF_HOUSEHOLD_ALIASES))
+                    },
+                ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
                 vol.Required(
                     CONF_UNKNOWN_ADDRESS_AS,
                     default=opts.get(
@@ -209,7 +241,9 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                 ),
             }
         )
-        return self.async_show_form(step_id="settings", data_schema=schema)
+        return self.async_show_form(
+            step_id="settings", data_schema=schema, errors=errors
+        )
 
     async def async_step_preview(
         self, user_input: dict[str, Any] | None = None
@@ -236,6 +270,13 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                 ),
                 deny_unknown=self.config_entry.options.get(CONF_DENY_UNKNOWN, False),
                 refusal_lines=_configured_refusal_lines(self.config_entry),
+                household_devices=tuple(
+                    household_devices(
+                        self.hass,
+                        household_entity_ids(self.config_entry),
+                        household_aliases(self.config_entry),
+                    )
+                ),
             )
             return self.async_show_form(
                 step_id="preview_result",
@@ -325,6 +366,13 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
             ),
             deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
             refusal_lines=_configured_refusal_lines(person_entry),
+            household_devices=tuple(
+                household_devices(
+                    hass,
+                    household_entity_ids(person_entry),
+                    household_aliases(person_entry),
+                )
+            ),
         )
         sections.append(person_prompt)
         notes.append(

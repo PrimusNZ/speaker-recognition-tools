@@ -12,6 +12,8 @@ from .const import (
     CONF_CONFIRM_ENTITIES,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
+    CONF_HOUSEHOLD_ALIASES,
+    CONF_HOUSEHOLD_DEVICES,
     CONF_LEGACY_ADDRESS_AS,
     CONF_LINK_ACTION_ENTITY,
     CONF_LINK_ADMIN_ONLY,
@@ -133,6 +135,25 @@ async def speaker_title(hass: HomeAssistant, data) -> str:
 def address_as(data) -> str:
     """Return a person's configured address form, reading the legacy key too."""
     return data.get(CONF_ADDRESS_AS, data.get(CONF_LEGACY_ADDRESS_AS)) or ""
+
+
+def household_entity_ids(entry: ConfigEntry) -> list[str]:
+    """The household devices of an entry. Calendars are never shared."""
+    return [
+        entity_id
+        for entity_id in entry.options.get(CONF_HOUSEHOLD_DEVICES, [])
+        if not is_calendar(entity_id)
+    ]
+
+
+def household_aliases(entry: ConfigEntry) -> dict[str, tuple[str, ...]]:
+    """The configured alternate names for each household device."""
+    shared = set(household_entity_ids(entry))
+    return {
+        entity_id: tuple(names)
+        for entity_id, names in entry.options.get(CONF_HOUSEHOLD_ALIASES, {}).items()
+        if entity_id in shared and names
+    }
 
 
 async def async_configured_people(

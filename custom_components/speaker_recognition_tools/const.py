@@ -47,6 +47,10 @@ CONF_UNKNOWN_ADDRESS_AS = "unknown_address_as"
 CONF_LEGACY_UNKNOWN_ADDRESS_AS = (
     "unknown_title"  # Read existing options saved before the field was renamed.
 )
+CONF_HOUSEHOLD_DEVICES = (
+    "household_devices"  # shared entities anyone who is not denied may use
+)
+CONF_HOUSEHOLD_ALIASES = "household_aliases"  # entity id to alternate names
 CONF_DENY_UNKNOWN = "deny_unknown"
 CONF_REFUSAL_LINES = "refusal_lines"  # one line per row
 CONF_MIN_CONFIDENCE = (

@@ -74,7 +74,17 @@ Their phones and trackers come from the person in **Settings > People**, so you 
 
 A **Linked device** gives one spoken name to two entities, one for status and one for actions. For example, "the heater" can read `sensor.heater_status` and switch `switch.heater`. Add one under Speaking Person.
 
-The settings (gear icon) cover how unknown speakers are addressed, **Deny unknown speakers** (refuse anyone who isn't recognised), the refusal lines, and **Minimum recognition confidence for changes**. **Preview prompt** shows exactly what the agent will be told for any person.
+The settings (gear icon) cover how unknown speakers are addressed, **Deny unknown speakers** (refuse anyone who isn't recognised), the refusal lines, **Household devices** and their aliases, and **Minimum recognition confidence for changes**. **Preview prompt** shows exactly what the agent will be told for any person.
+
+## Household devices
+
+Some things belong to the house, not to a person: an air conditioner, a fan, a heater. Pick them under **Household devices** in the settings. Anyone who isn't denied can read and control them, **including unknown speakers**. Calendars can't be shared this way.
+
+The same words work in every room. When you have an air conditioner in the container and one on the bus, "Set the aircon to cool" uses the one in the room you're speaking from (the area of the device you're talking to), and otherwise one on the same floor. Name a room ("the bus aircon") and that room wins. If it's still unclear, the agent asks which one. Give your devices an area in Home Assistant for this to work.
+
+Add **Household device aliases** so natural words work: one line per device, such as `climate.bus_air_conditioner: Aircon`. Give both air conditioners the alias "Aircon" and "Set the aircon to cool" still picks the one in your room. Aliases you've set on the entity in Home Assistant count too.
+
+Unknown speakers can never use locks, alarm panels, or door, gate and garage covers, even if you add them here. Anyone who is recognised can, and unlocking and opening still ask for a yes first. A household device is open to everyone who isn't denied, so add only things you're happy for a guest, or a voice on the TV, to control.
 
 ## What you can ask
 
@@ -85,6 +95,7 @@ The settings (gear icon) cover how unknown speakers are addressed, **Deny unknow
 - "Where is my phone?" gives its room if your setup knows it, or just that it's at home.
 - "Tell Sarah dinner is ready."
 - "Turn on the heater" or "What's the fuel level?" for entities you've given to a person.
+- "Set the aircon to cool" or "Make it 22 degrees" for household devices, in whichever room you are.
 
 Anything that changes something takes a preview and a yes. Locks, alarm panels and garage doors also ask before opening or disarming.
 

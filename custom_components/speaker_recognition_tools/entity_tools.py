@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import probatio as vol
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     area_registry as ar,
@@ -19,6 +20,7 @@ from homeassistant.helpers import (
 from homeassistant.helpers import (
     llm,
 )
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .tool_base import (
     _READ_ONLY,
@@ -51,6 +53,28 @@ def _needs_confirmation(
     """Whether this action must be previewed and confirmed before it runs."""
     if entity_id in person.confirm:
         return True
+    return sensitive_action_needs_confirmation(hass, entity_id, service_domain, service)
+
+
+def is_restricted_entity(hass: HomeAssistant, entity_id: str) -> bool:
+    """Whether this entity is a lock, alarm panel, door, gate or garage door, or a calendar.
+
+    An entity whose cover type cannot be read counts as restricted.
+    """
+    domain = entity_id.split(".", 1)[0]
+    if domain in ("calendar", "lock", "alarm_control_panel"):
+        return True
+    if domain == "cover":
+        state = hass.states.get(entity_id)
+        device_class = state.attributes.get("device_class") if state else None
+        return state is None or device_class in _SENSITIVE_COVER_CLASSES
+    return False
+
+
+def sensitive_action_needs_confirmation(
+    hass: HomeAssistant, entity_id: str, service_domain: str, service: str
+) -> bool:
+    """Whether the built-in rules make this action need a spoken yes."""
     domain = entity_id.split(".", 1)[0]
     if domain not in _ALWAYS_CONFIRM_DOMAINS:
         return False
@@ -62,6 +86,282 @@ def _needs_confirmation(
     return not (
         service_domain == domain and service in _SECURING_SERVICES.get(domain, ())
     )
+
+
+_RESERVED_SERVICE_DATA = {
+    "entity_id",
+    "device_id",
+    "area_id",
+    "floor_id",
+    "label_id",
+    "target",
+}
+
+
+def check_service(
+    hass: HomeAssistant, entity_id: str, args: dict[str, Any]
+) -> tuple[tuple[str, str, str, dict] | None, dict[str, Any] | None]:
+    """Check the requested service for one entity.
+
+    Returns ((service, domain, name, service_data), None), or (None, problem).
+    """
+    entity_domain = entity_id.split(".", 1)[0]
+    service = str(args.get("service", "")).strip().lower()
+    parts = service.split(".")
+    if len(parts) != 2 or not all(parts):
+        return None, {
+            "problem": "invalid_service",
+            "message": "Use a domain.service name.",
+        }
+    service_domain, service_name = parts
+    if entity_domain == "calendar":
+        return None, {
+            "problem": "use_calendar_tools",
+            "message": "Use the calendar tools for calendar events.",
+        }
+    if service_domain == "homeassistant":
+        if service_name not in {"turn_on", "turn_off", "toggle"}:
+            return None, {
+                "problem": "service_not_allowed",
+                "message": (
+                    "Only homeassistant.turn_on, turn_off, and toggle can "
+                    "target an assigned entity."
+                ),
+            }
+    elif service_domain != entity_domain:
+        return None, {
+            "problem": "service_domain_mismatch",
+            "message": "The service must belong to the entity's domain.",
+        }
+    service_data = args.get("service_data") or {}
+    if not isinstance(service_data, dict):
+        return None, {
+            "problem": "invalid_service_data",
+            "message": "service_data must be an object.",
+        }
+    if _RESERVED_SERVICE_DATA.intersection(service_data):
+        return None, {
+            "problem": "target_override",
+            "message": "service_data cannot select additional entities or targets.",
+        }
+    if not hass.services.has_service(service_domain, service_name):
+        return None, {"problem": "unknown_service", "service": service}
+    return (service, service_domain, service_name, service_data), None
+
+
+def _normal(value: Any) -> str:
+    return str(value).strip().casefold().replace(" ", "_").replace("-", "_")
+
+
+# service -> (service_data field, state attribute listing the supported values)
+_CLIMATE_CHOICES = {
+    "set_hvac_mode": ("hvac_mode", "hvac_modes"),
+    "set_fan_mode": ("fan_mode", "fan_modes"),
+    "set_swing_mode": ("swing_mode", "swing_modes"),
+    "set_swing_horizontal_mode": ("swing_horizontal_mode", "swing_horizontal_modes"),
+    "set_preset_mode": ("preset_mode", "preset_modes"),
+    "set_temperature": ("hvac_mode", "hvac_modes"),
+}
+_CLIMATE_TEMPERATURES = ("temperature", "target_temp_high", "target_temp_low")
+
+
+def validate_climate(
+    hass: HomeAssistant, entity_id: str, service_name: str, service_data: dict
+) -> dict[str, Any] | None:
+    """Check a climate request against what the unit supports.
+
+    Matches modes without regard to case or spaces, fixing them in service_data.
+    Returns a problem naming the valid choices, or None.
+    """
+    if not entity_id.startswith("climate."):
+        return None
+    state = hass.states.get(entity_id)
+    if state is None:
+        return None
+    choice = _CLIMATE_CHOICES.get(service_name)
+    if choice and choice[0] in service_data:
+        field, attribute = choice
+        supported = state.attributes.get(attribute)
+        if isinstance(supported, list) and supported:
+            wanted = _normal(service_data[field])
+            match = next((v for v in supported if _normal(v) == wanted), None)
+            if match is None:
+                return {
+                    "problem": "unsupported_value",
+                    "field": field,
+                    "value": service_data[field],
+                    "supported": supported,
+                    "message": (
+                        f"{service_data[field]!r} is not a supported {field}. "
+                        f"Choose one of: {', '.join(map(str, supported))}."
+                    ),
+                }
+            service_data[field] = match
+    if service_name == "set_temperature":
+        low, high = state.attributes.get("min_temp"), state.attributes.get("max_temp")
+        for field in _CLIMATE_TEMPERATURES:
+            if field not in service_data:
+                continue
+            try:
+                value = float(service_data[field])
+            except (TypeError, ValueError):
+                return {
+                    "problem": "invalid_temperature",
+                    "field": field,
+                    "message": f"{field} must be a number.",
+                }
+            if (isinstance(low, (int, float)) and value < low) or (
+                isinstance(high, (int, float)) and value > high
+            ):
+                return {
+                    "problem": "temperature_out_of_range",
+                    "field": field,
+                    "value": service_data[field],
+                    "min_temp": low,
+                    "max_temp": high,
+                    "message": (
+                        f"{field} must be between {low} and {high} "
+                        f"{state.attributes.get('temperature_unit', '')}".strip()
+                        + "."
+                    ),
+                }
+            service_data[field] = value
+    return None
+
+
+_CLIMATE_RESULT_ATTRIBUTES = (
+    "temperature",
+    "target_temp_high",
+    "target_temp_low",
+    "current_temperature",
+    "hvac_action",
+    "fan_mode",
+    "swing_mode",
+    "preset_mode",
+)
+
+
+def state_after(hass: HomeAssistant, entity_id: str) -> dict[str, Any]:
+    """Report the entity's state after an action; climate also shows its settings."""
+    state = hass.states.get(entity_id)
+    if state is None:
+        return {}
+    result: dict[str, Any] = {"state_after": state.state}
+    if entity_id.startswith("climate."):
+        result["settings_after"] = {
+            "hvac_mode": state.state,
+            **{
+                key: state.attributes[key]
+                for key in _CLIMATE_RESULT_ATTRIBUTES
+                if state.attributes.get(key) is not None
+            },
+        }
+    return result
+
+
+# How long to wait for a unit to report its new state after a service call. Cloud
+# or network-backed units often answer the call before they report the change.
+STATE_SETTLE_TIMEOUT = 5.0
+
+_EXPECTED_STATES = {
+    "turn_on": "on",
+    "turn_off": "off",
+    "lock": "locked",
+    "unlock": "unlocked",
+}
+_CHECKED_ATTRIBUTES = (
+    "temperature",
+    "target_temp_high",
+    "target_temp_low",
+    "fan_mode",
+    "swing_mode",
+    "preset_mode",
+)
+
+
+def _expectations(
+    service_name: str, service_data: dict[str, Any]
+) -> tuple[str | None, dict[str, Any]]:
+    """The state and attributes the call should lead to, where they can be known."""
+    state = _EXPECTED_STATES.get(service_name)
+    if service_name == "set_hvac_mode":
+        state = service_data.get("hvac_mode")
+    attributes = {
+        key: service_data[key] for key in _CHECKED_ATTRIBUTES if key in service_data
+    }
+    return state, attributes
+
+
+def _matches(
+    state: State | None, expected_state: str | None, attributes: dict[str, Any]
+) -> bool:
+    if state is None:
+        return False
+    if expected_state is not None and state.state != expected_state:
+        return False
+    return all(state.attributes.get(key) == value for key, value in attributes.items())
+
+
+async def wait_for_state(
+    hass: HomeAssistant,
+    entity_id: str,
+    before: State | None,
+    service_name: str,
+    service_data: dict[str, Any],
+) -> bool:
+    """Wait for the entity to show the result of a call; False if it never does.
+
+    When the expected result is known (turn_on, set_hvac_mode, set_temperature and so
+    on) it returns at once if the unit already shows it, otherwise when it does.
+    For any other call it returns once the entity changes from `before`.
+    """
+    expected_state, attributes = _expectations(service_name, service_data)
+    known = expected_state is not None or bool(attributes)
+    current = hass.states.get(entity_id)
+    if known:
+        if _matches(current, expected_state, attributes):
+            return True
+    elif current is not before:
+        return True
+    settled = asyncio.Event()
+
+    @callback
+    def _changed(event: Event) -> None:
+        new_state = event.data.get("new_state")
+        if new_state is None:
+            return
+        if not known or _matches(new_state, expected_state, attributes):
+            settled.set()
+
+    unsubscribe = async_track_state_change_event(hass, [entity_id], _changed)
+    try:
+        async with asyncio.timeout(STATE_SETTLE_TIMEOUT):
+            await settled.wait()
+    except TimeoutError:
+        return False
+    finally:
+        unsubscribe()
+    return True
+
+
+async def state_after_call(
+    hass: HomeAssistant,
+    entity_id: str,
+    before: State | None,
+    service_name: str,
+    service_data: dict[str, Any],
+) -> dict[str, Any]:
+    """Report the state after a call, waiting briefly for a slow unit to report it."""
+    confirmed = await wait_for_state(hass, entity_id, before, service_name, service_data)
+    result = state_after(hass, entity_id)
+    if not confirmed:
+        result["state_confirmed"] = False
+        result["note"] = (
+            "The command was sent, but the unit has not reported a change yet; "
+            "some units take a few seconds. Do not say the command failed. Say it "
+            "was sent and is not confirmed yet, and offer to check again."
+        )
+    return result
 
 
 class GetEntityStateTool(_PersonTool):
@@ -149,8 +449,13 @@ class ControlAssignedEntityTool(_PersonTool):
         "Perform a requested Home Assistant action on one assigned entity. entity "
         "accepts its exact entity_id, configured name, or alias; use the first alias "
         "as its preferred name in your reply. service must be a Home Assistant "
-        "service such as button.press, switch.turn_on, light.turn_off, climate.set_temperature, "
-        "or homeassistant.turn_on. Supply service-specific fields in service_data. "
+        "service such as button.press, switch.turn_on, light.turn_off, or "
+        "homeassistant.turn_on. For a climate entity use climate.set_hvac_mode with "
+        "hvac_mode in service_data (for example cool, heat, off), "
+        "climate.set_temperature with temperature, climate.set_fan_mode with fan_mode, "
+        "climate.set_swing_mode with swing_mode, or climate.turn_on or turn_off; "
+        "read its state first to see the hvac_modes, fan_modes and temperature "
+        "range it supports. Supply service-specific fields in service_data. "
         "Only entities assigned to the selected person may be controlled. For a "
         "linked device, its spoken name or any alias resolves to the action entity here. The "
         "optional person parameter accepts a first name, configured form of address, or configured "
@@ -204,72 +509,13 @@ class ControlAssignedEntityTool(_PersonTool):
                 },
                 error=True,
             )
-        entity_domain = entity_id.split(".", 1)[0]
-        service = str(args.get("service", "")).strip().lower()
-        parts = service.split(".")
-        if len(parts) != 2 or not all(parts):
-            return _result(
-                {"problem": "invalid_service", "message": "Use a domain.service name."},
-                error=True,
-            )
-        service_domain, service_name = parts
-        if entity_domain == "calendar":
-            return _result(
-                {
-                    "problem": "use_calendar_tools",
-                    "message": "Use the calendar tools for calendar events.",
-                },
-                error=True,
-            )
-        if service_domain == "homeassistant":
-            if service_name not in {"turn_on", "turn_off", "toggle"}:
-                return _result(
-                    {
-                        "problem": "service_not_allowed",
-                        "message": (
-                            "Only homeassistant.turn_on, turn_off, and toggle can "
-                            "target an assigned entity."
-                        ),
-                    },
-                    error=True,
-                )
-        elif service_domain != entity_domain:
-            return _result(
-                {
-                    "problem": "service_domain_mismatch",
-                    "message": "The service must belong to the entity's domain.",
-                },
-                error=True,
-            )
-        service_data = args.get("service_data") or {}
-        if not isinstance(service_data, dict):
-            return _result(
-                {
-                    "problem": "invalid_service_data",
-                    "message": "service_data must be an object.",
-                },
-                error=True,
-            )
-        reserved = {
-            "entity_id",
-            "device_id",
-            "area_id",
-            "floor_id",
-            "label_id",
-            "target",
-        }
-        if reserved.intersection(service_data):
-            return _result(
-                {
-                    "problem": "target_override",
-                    "message": "service_data cannot select additional entities or targets.",
-                },
-                error=True,
-            )
-        if not hass.services.has_service(service_domain, service_name):
-            return _result(
-                {"problem": "unknown_service", "service": service}, error=True
-            )
+        checked, problem = check_service(hass, entity_id, args)
+        if problem:
+            return _result(problem, error=True)
+        service, service_domain, service_name, service_data = checked
+        problem = validate_climate(hass, entity_id, service_name, service_data)
+        if problem:
+            return _result({"entity": label, **problem}, error=True)
         if self.household.uncertain or _needs_confirmation(
             hass, person, entity_id, service_domain, service_name
         ):
@@ -293,6 +539,7 @@ class ControlAssignedEntityTool(_PersonTool):
             )
             if staged is not None:
                 return staged
+        before = hass.states.get(entity_id)
         try:
             await hass.services.async_call(
                 service_domain,
@@ -311,7 +558,6 @@ class ControlAssignedEntityTool(_PersonTool):
                 },
                 error=True,
             )
-        state = hass.states.get(entity_id)
         return _result(
             {
                 "person": self.household.reference(person),
@@ -319,6 +565,8 @@ class ControlAssignedEntityTool(_PersonTool):
                 "entity_id": entity_id,
                 "service": service,
                 "service_called": True,
-                **({"state_after": state.state} if state else {}),
+                **await state_after_call(
+                    hass, entity_id, before, service_name, service_data
+                ),
             }
         )

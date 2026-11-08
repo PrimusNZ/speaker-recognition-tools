@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from homeassistant.core import ServiceCall
 from homeassistant.helpers import (
     area_registry as ar,
@@ -475,3 +477,132 @@ async def test_admin_only_entity_can_still_be_read(hass, users) -> None:
     result, error = await _call_entity_tool(hass, users["James"], tool, entity="Heater")
     assert not error
     assert result["state"] == "off"
+
+
+async def test_control_assigned_climate_refuses_unsupported_mode_with_choices(
+    hass, users
+) -> None:
+    hass.states.async_set(
+        "climate.demo_device",
+        "off",
+        {"hvac_modes": ["off", "cool"], "min_temp": 16, "max_temp": 30},
+    )
+    calls = []
+
+    async def set_mode(call: ServiceCall) -> None:
+        calls.append(dict(call.data))
+        hass.states.async_set(call.data["entity_id"], call.data["hvac_mode"])
+
+    hass.services.async_register("climate", "set_hvac_mode", set_mode)
+    person = Person(
+        users["James"].id, "James", "Dad", (("climate.demo_device", "Demo unit"),)
+    )
+    tool = entity_tools.ControlAssignedEntityTool(tool_base.Household([person], person))
+
+    result, error = await _call_entity_tool(
+        hass,
+        users["James"],
+        tool,
+        entity="Demo unit",
+        service="climate.set_hvac_mode",
+        service_data={"hvac_mode": "heat"},
+    )
+    assert error and result["problem"] == "unsupported_value"
+    assert result["supported"] == ["off", "cool"]
+    assert not calls
+
+    result, error = await _call_entity_tool(
+        hass,
+        users["James"],
+        tool,
+        entity="Demo unit",
+        service="climate.set_hvac_mode",
+        service_data={"hvac_mode": "Cool"},
+    )
+    assert not error
+    assert calls == [{"entity_id": "climate.demo_device", "hvac_mode": "cool"}]
+    assert result["settings_after"] == {"hvac_mode": "cool"}
+
+
+async def test_state_after_call_waits_for_a_slow_unit_to_report(hass, monkeypatch):
+    monkeypatch.setattr(entity_tools, "STATE_SETTLE_TIMEOUT", 2.0)
+    hass.states.async_set("climate.unit", "cool", {"fan_mode": "high"})
+    before = hass.states.get("climate.unit")
+
+    async def report_late() -> None:
+        await asyncio.sleep(0.05)
+        hass.states.async_set("climate.unit", "off", {"fan_mode": "high"})
+
+    task = hass.async_create_task(report_late())
+    result = await entity_tools.state_after_call(
+        hass, "climate.unit", before, "turn_off", {}
+    )
+    await task
+
+    assert result["state_after"] == "off"
+    assert result["settings_after"]["hvac_mode"] == "off"
+    assert "state_confirmed" not in result
+
+
+async def test_state_after_call_flags_a_unit_that_never_reports(hass, monkeypatch):
+    monkeypatch.setattr(entity_tools, "STATE_SETTLE_TIMEOUT", 0.05)
+    hass.states.async_set("climate.unit", "cool")
+    before = hass.states.get("climate.unit")
+
+    result = await entity_tools.state_after_call(
+        hass, "climate.unit", before, "turn_off", {}
+    )
+
+    assert result["state_after"] == "cool"
+    assert result["state_confirmed"] is False
+    assert "Do not say the command failed" in result["note"]
+
+
+async def test_state_after_call_does_not_wait_when_state_already_matches(
+    hass, monkeypatch
+):
+    monkeypatch.setattr(entity_tools, "STATE_SETTLE_TIMEOUT", 0.05)
+    hass.states.async_set("climate.unit", "off")
+    before = hass.states.get("climate.unit")
+
+    result = await entity_tools.state_after_call(
+        hass, "climate.unit", before, "turn_off", {}
+    )
+
+    assert result["state_after"] == "off"
+    assert "state_confirmed" not in result
+
+
+async def test_state_after_call_waits_for_requested_attribute(hass, monkeypatch):
+    monkeypatch.setattr(entity_tools, "STATE_SETTLE_TIMEOUT", 2.0)
+    hass.states.async_set("climate.unit", "cool", {"temperature": 22})
+    before = hass.states.get("climate.unit")
+
+    async def report_late() -> None:
+        await asyncio.sleep(0.05)
+        hass.states.async_set("climate.unit", "cool", {"temperature": 18})
+
+    task = hass.async_create_task(report_late())
+    result = await entity_tools.state_after_call(
+        hass, "climate.unit", before, "set_temperature", {"temperature": 18}
+    )
+    await task
+
+    assert result["settings_after"]["temperature"] == 18
+    assert "state_confirmed" not in result
+
+
+async def test_state_after_call_accepts_any_change_for_other_services(
+    hass, monkeypatch
+):
+    monkeypatch.setattr(entity_tools, "STATE_SETTLE_TIMEOUT", 0.05)
+    hass.states.async_set("vacuum.robot", "docked")
+    before = hass.states.get("vacuum.robot")
+    hass.states.async_set("vacuum.robot", "cleaning")
+
+    result = await entity_tools.state_after_call(
+        hass, "vacuum.robot", before, "start", {}
+    )
+
+    assert result["state_after"] == "cleaning"
+    assert "state_confirmed" not in result

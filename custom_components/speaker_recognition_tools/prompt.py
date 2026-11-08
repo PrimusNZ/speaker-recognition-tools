@@ -258,6 +258,45 @@ def _people_text(people: list[Person], user_id: str | None) -> str:
     return f"\n\n## ENTITY MAPPINGS\n\n{intro}\n\n{blocks}"
 
 
+def _household_text(devices: tuple, *, recognised: bool) -> str:
+    """Return the HOUSEHOLD DEVICES section, or "".
+
+    devices holds (entity_id, name, area, floor, restricted, aliases). Unknown speakers
+    are not shown locks, alarm panels, door, gate or garage covers.
+    """
+    shown = [d for d in devices if recognised or not d[4]]
+    if not shown:
+        return ""
+    lines = []
+    for entity_id, name, area, floor, _, aliases in sorted(
+        shown, key=lambda d: (d[1].casefold(), d[0])
+    ):
+        place = ", ".join(
+            part
+            for part in (
+                f"area: {area}" if area else "",
+                f"floor: {floor}" if floor else "",
+            )
+            if part
+        )
+        lines.append(
+            f" - {entity_id}: {name}"
+            + (f" ({place})" if place else "")
+            + (f" (other aliases: {', '.join(aliases)})" if aliases else "")
+        )
+    return (
+        "\n\n## HOUSEHOLD DEVICES\n\nThese shared devices are not assigned to a "
+        "person. Anyone may use them. Use get_household_device_state to read one "
+        "and control_household_device to act on one. The first name shown for a "
+        "device is its preferred name; any other aliases are alternate names for "
+        "that same device. Give the device's common name or an alias, without its "
+        "room, such as Air Conditioner, and leave area out, so the "
+        "device in the speaker's own room is used, falling back to the same floor. "
+        "Set area only when the speaker names a room or floor. If more than one "
+        "device still matches, ask which one is meant.\n\n" + "\n".join(lines)
+    )
+
+
 def _build_person_text(
     *,
     user_id: str | None,
@@ -267,6 +306,7 @@ def _build_person_text(
     unknown_address_as: str,
     deny_unknown: bool,
     refusal_lines: list[str],
+    household_devices: tuple = (),
 ) -> str:
     """Return the speaking-person text for one request."""
     speaker_person = next((p for p in people if p.user_id == user_id), None)
@@ -313,6 +353,7 @@ def _build_person_text(
             f"{_direct_address_rule(direct_address)} Recognition is reliable but not infallible. "
             "Do not discuss the recognition process unless asked."
             f"{_people_text(people, user_id)}"
+            f"{_household_text(household_devices, recognised=True)}"
         )
 
     if deny_unknown:
@@ -348,6 +389,7 @@ def _build_person_text(
         f"{_direct_address_rule(unknown_address_as)} Recognition is reliable but not infallible. "
         "Do not discuss the recognition process unless asked."
         f"{_people_text(people, None if not name else user_id)}"
+        f"{_household_text(household_devices, recognised=False)}"
     )
 
 

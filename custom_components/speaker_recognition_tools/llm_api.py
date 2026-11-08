@@ -25,7 +25,13 @@ from .const import (
     PERSON_API_NAME,
     SIGNAL_SPEAKER,
 )
-from .people import async_configured_people, first_name
+from .household_tools import build_household_tools, household_devices
+from .people import (
+    async_configured_people,
+    first_name,
+    household_aliases,
+    household_entity_ids,
+)
 from .prompt import Person, build_device_prompt, build_person_prompt
 from .recognition import latest_confidence
 from .tools import build_tools
@@ -62,6 +68,8 @@ class SpeakingPersonAPI(llm.API):
             user_name = first_name(user.name)
 
         people = await async_configured_people(self.hass, self._entry)
+        household_ids = household_entity_ids(self._entry)
+        aliases = household_aliases(self._entry)
 
         lines = [
             line.strip()
@@ -81,6 +89,19 @@ class SpeakingPersonAPI(llm.API):
             ),
             deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
             refusal_lines=lines or DEFAULT_REFUSAL_LINES.splitlines(),
+            household_devices=tuple(
+                household_devices(
+                    self.hass,
+                    [
+                        e
+                        for e in household_ids
+                        if not any(
+                            e in p.private and p.user_id != user_id for p in people
+                        )
+                    ],
+                    aliases,
+                )
+            ),
         )
         # Tools are only offered to recognised speakers, never to unknown ones.
         speaker = next((p for p in people if p.user_id == user_id), None)
@@ -93,7 +114,24 @@ class SpeakingPersonAPI(llm.API):
         uncertain = bool(
             threshold and confidence is not None and confidence < threshold
         )
-        tools = build_tools(people, speaker, uncertain=uncertain) if speaker else []
+        if speaker:
+            tools = [
+                *build_tools(people, speaker, uncertain=uncertain),
+                *build_household_tools(
+                    household_ids,
+                    people,
+                    speaker,
+                    uncertain=uncertain,
+                    aliases=aliases,
+                ),
+            ]
+        elif options.get(CONF_DENY_UNKNOWN, False):
+            tools = []
+        else:
+            # Unknown speakers get only the household devices, never person tools.
+            tools = build_household_tools(
+                household_ids, people, None, aliases=aliases
+            )
         self._announce(speaker, llm_context, confidence, uncertain)
         return llm.APIInstance(
             api=self, api_prompt=prompt, llm_context=llm_context, tools=tools

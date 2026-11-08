@@ -3,6 +3,19 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.3] - 2026-11-08
+
+### Added
+
+- Household devices: a new **Household devices** setting (gear icon) for shared entities that aren't assigned to a person, such as an air conditioner. Two new tools, `get_household_device_state` and `control_household_device`, read and control them. Anyone who isn't denied can use them, including unknown speakers. Unknown speakers can never use locks, alarm panels, or door, gate or garage covers, which are refused in the tools and left out of their prompt. Calendars cannot be household devices, and a device that another person has marked private is not shared. A new `HOUSEHOLD DEVICES` prompt section lists them with their area and floor.
+- Household device aliases: a **Household device aliases** setting (one `entity_id: alias, another alias` line per device, like people's entity aliases) gives devices alternate names, such as "aircon". The first alias is the preferred name. Aliases set on the entity in Home Assistant count too. Several devices can share an alias and the room rules still choose between them.
+- The same words work in every room. When several household devices match a name, the one in the area of the device the speaker is using is chosen, then one on the same floor. A room or floor the speaker names wins, and if it is still unclear the agent is given the choices and asks.
+- Better climate control, for household devices and for assigned entities: the tool description now names `climate.set_hvac_mode`, `set_temperature`, `set_fan_mode` and `set_swing_mode`. Modes are matched without regard to case or spaces, a mode the unit doesn't support is refused with the modes it does, and a temperature outside the unit's range is refused with the range. After a climate action the result shows the resulting mode, target temperature, fan and swing settings.
+
+### Fixed
+
+- Controlling a unit that is slow to report its new state, such as a cloud-connected air conditioner, no longer looks like a failure. After a household device or assigned entity action the tool waits up to 5 seconds for the unit to show the result (returning as soon as it does, or at once if it already shows it). If it still hasn't, the result says `state_confirmed: false` with a note telling the agent to say the command was sent and is not confirmed yet, instead of reporting that it failed.
+
 ## [0.10.2.2] - 2026-11-02
 
 ### Changed

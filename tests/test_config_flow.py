@@ -26,6 +26,8 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
+    CONF_HOUSEHOLD_ALIASES,
+    CONF_HOUSEHOLD_DEVICES,
     CONF_LEGACY_ADDRESS_AS,
     CONF_LEGACY_UNKNOWN_ADDRESS_AS,
     CONF_LINK_ACTION_ENTITY,
@@ -998,6 +1000,27 @@ async def test_settings_save_minimum_confidence(hass: HomeAssistant) -> None:
     assert entry.options[CONF_MIN_CONFIDENCE] == 0.75
 
 
+async def test_settings_save_and_clear_household_devices(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    for devices in (["climate.bus_air_conditioner"], None):
+        flow = await hass.config_entries.options.async_init(entry.entry_id)
+        flow = await hass.config_entries.options.async_configure(
+            flow["flow_id"], {"next_step_id": "settings"}
+        )
+        result = await hass.config_entries.options.async_configure(
+            flow["flow_id"],
+            {
+                CONF_DENY_UNKNOWN: False,
+                CONF_UNKNOWN_ADDRESS_AS: "Visitor",
+                CONF_REFUSAL_LINES: "No.",
+                CONF_MIN_CONFIDENCE: 0,
+                **({CONF_HOUSEHOLD_DEVICES: devices} if devices else {}),
+            },
+        )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert entry.options[CONF_HOUSEHOLD_DEVICES] == (devices or [])
+
+
 async def test_to_do_list_cannot_go_in_the_entities_list(hass: HomeAssistant) -> None:
     entry = await _person_entry(hass)
     user = await _user(hass, "James")
@@ -1267,3 +1290,51 @@ async def test_linked_device_title_notes_its_flags(hass: HomeAssistant) -> None:
     assert result["title"] == (
         "Demo unit (James, private, needs confirmation, administrators only)"
     )
+
+
+async def _save_settings(hass, entry, **extra):
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await hass.config_entries.options.async_configure(
+        flow["flow_id"], {"next_step_id": "settings"}
+    )
+    return await hass.config_entries.options.async_configure(
+        flow["flow_id"],
+        {
+            CONF_DENY_UNKNOWN: False,
+            CONF_UNKNOWN_ADDRESS_AS: "Visitor",
+            CONF_REFUSAL_LINES: "No.",
+            CONF_MIN_CONFIDENCE: 0,
+            **extra,
+        },
+    )
+
+
+async def test_settings_save_household_device_aliases(hass: HomeAssistant) -> None:
+    entry = await _person_entry(hass)
+    result = await _save_settings(
+        hass,
+        entry,
+        **{
+            CONF_HOUSEHOLD_DEVICES: ["climate.bus"],
+            CONF_HOUSEHOLD_ALIASES: "climate.bus: Aircon, Cooler",
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_HOUSEHOLD_ALIASES] == {"climate.bus": ["Aircon", "Cooler"]}
+
+
+async def test_household_aliases_must_name_a_household_device(
+    hass: HomeAssistant,
+) -> None:
+    entry = await _person_entry(hass)
+    result = await _save_settings(
+        hass,
+        entry,
+        **{
+            CONF_HOUSEHOLD_DEVICES: ["climate.bus"],
+            CONF_HOUSEHOLD_ALIASES: "climate.other: Aircon",
+        },
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_HOUSEHOLD_ALIASES: "invalid_household_aliases"}
+    assert CONF_HOUSEHOLD_ALIASES not in entry.options

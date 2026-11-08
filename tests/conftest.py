@@ -27,3 +27,11 @@ def prompt():
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Let Home Assistant load custom_components from this repo."""
     yield
+
+
+@pytest.fixture(autouse=True)
+def short_state_settle_timeout(monkeypatch):
+    """Keep tests quick when a fake unit never reports a new state."""
+    from custom_components.speaker_recognition_tools import entity_tools
+
+    monkeypatch.setattr(entity_tools, "STATE_SETTLE_TIMEOUT", 0.05)
