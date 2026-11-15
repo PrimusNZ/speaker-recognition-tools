@@ -13,7 +13,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
     CONF_ADDRESS_AS,
-    CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_PRIVATE_ENTITIES,
     CONF_TOOL_TYPE,
@@ -26,6 +25,7 @@ from custom_components.speaker_recognition_tools.const import (
 from tests.tools.helpers import (
     PEOPLE,
     Calendars,
+    add_wrapper,
 )
 
 
@@ -75,12 +75,13 @@ async def users(hass: HomeAssistant, calendars: Calendars):
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
-        options={CONF_UNKNOWN_ADDRESS_AS: "Unknown Person", CONF_DENY_UNKNOWN: False},
+        options={CONF_UNKNOWN_ADDRESS_AS: "Unknown Person"},
         subentries_data=subentries,
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    add_wrapper(hass)
     return accounts
 
 

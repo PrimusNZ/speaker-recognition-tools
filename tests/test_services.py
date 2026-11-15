@@ -14,8 +14,8 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_USER_ID,
     DOMAIN,
     SUBENTRY_SPEAKER,
-    TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
+    TOOL_TYPE_WRAPPER,
 )
 
 SERVICE = "get_user_level"
@@ -179,7 +179,7 @@ async def test_full_names_are_returned_outside_the_prompt(hass, users) -> None:
 
 
 async def test_responds_without_any_configured_people(hass: HomeAssistant) -> None:
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_TOOL_TYPE: TOOL_TYPE_DEVICE})
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_TOOL_TYPE: TOOL_TYPE_WRAPPER})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     result = await call(hass, {"person": "Alex"})

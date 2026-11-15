@@ -8,24 +8,28 @@ Make no change at all unless the user has expressly told you to proceed. This co
 
 ## Project
 
-A Home Assistant custom integration (`speaker_recognition_tools`, distributed through HACS). Repository: `PrimusNZ/speaker-recognition-tools`. It adds two LLM APIs for conversation agents: Speaking Person and Speaking Device. They tell the agent who is speaking and which device they are using. It depends on the separate Speaker Recognition project, which sets the Home Assistant user for each request. This integration only reads that result.
+A Home Assistant custom integration (`speaker_recognition_tools`, distributed through HACS). Repository: `PrimusNZ/speaker-recognition-tools`. It adds a Conversation Proxy (required) that wraps a chosen conversation agent, refuses speakers who are not allowed, and tells the agent who is speaking and which device they are using, plus the Speaking Person LLM API, which holds the people and gives recognised speakers their tools. The Speaking Device API and entry no longer exist; old entries are deleted on setup. The proxy is called `wrapper` in code (`TOOL_TYPE_WRAPPER`, `wrapper.py`, `conversation.py`, the `wrapper` options step) because its saved entries use those names; keep them. User-facing text says Conversation Proxy. It depends on the separate Speaker Recognition project, which sets the Home Assistant user for each request. This integration only reads that result.
 
 See `README.md` for behaviour and `docs/reference.md` for the technical details.
 
 ## Layout
 
 - `custom_components/speaker_recognition_tools/`
-  - `__init__.py`: entry setup, including the sensor platform and Repairs checks for Speaking Person entries.
-  - `config_flow.py`: config and options flows, person and linked-device subentries, prompt preview, entity checks.
+  - `__init__.py`: entry setup for the Speaking Person and Conversation Proxy entries (sensor and conversation platforms, Repairs checks), and deletion of old Speaking Device entries.
+  - `config_flow.py`: config and options flows (Speaking Person, Conversation Proxy), person and linked-device subentries, prompt previews, entity checks.
+  - `conversation.py`: the Conversation Proxy entity. It delegates to the wrapped agent, applies the denial rule, and appends the person and device sections to `extra_system_prompt`.
+  - `wrapper.py`: the proxy's shared logic: finding entries, the denial rule (`should_deny`, `alarm_counts_as_armed`), `denial_settings`, and reading an agent's selected APIs.
   - `const.py`: constants.
   - `people.py`: loads configured people from an entry; the single source for the prompt, tools, previews and actions.
-  - `llm_api.py`: the two LLM API classes. Speaking Person also fires the `speaker_recognition_tools_speaker` event each turn.
+  - `llm_api.py`: the Speaking Person API class, `async_person_prompt` and `device_prompt`, and `announce_speaker`, which fires the `speaker_recognition_tools_speaker` event each turn. Without a loaded proxy the API offers no tools.
   - `prompt.py`: builds the prompt sections (`SPEAKING PERSON`, `ENTITY MAPPINGS`, `PEOPLE`, `SPEAKING DEVICE`) and defines `Person`.
   - `tools.py`: `build_tools`, which assembles the tools for one recognised speaker.
   - `tool_base.py`: shared tool pieces: `Household`, target resolution, the base tool class, and the preview and confirmation flow.
+  - `household_tools.py`: the household device tools.
+  - `migration.py`: moves older saved people onto person entities and the calendars field.
   - `entity_tools.py`, `calendar_tools.py`, `location_tools.py`, `todo_tools.py`, `message_tools.py`: the tools, grouped by area.
   - `recognition.py`: reads the turn's confidence score from Speaker Recognition's internal decision history, defensively.
-  - `issues.py`: follows entity renames and raises Repairs issues for missing entities, message actions and accounts.
+  - `issues.py`: follows entity renames and raises Repairs issues for missing entities, message actions and accounts, a missing proxy, and a proxy whose agent lacks Speaking Person or has no Speaking Person entry.
   - `diagnostics.py`: the diagnostics download, without names, aliases or addresses.
   - `sensor.py`: the Last speaker sensor.
   - `services.py`, `services.yaml`: the `get_user_level` action.
@@ -33,9 +37,9 @@ See `README.md` for behaviour and `docs/reference.md` for the technical details.
   - `manifest.json`: integration metadata, including `version`.
 - `tests/`: one test module per source module, using `pytest-homeassistant-custom-component`. Tool tests live in `tests/tools/`, with shared fixtures in its `conftest.py` and helpers in `helpers.py`.
 
-Speaking Person offers sixteen tools to recognised speakers: `get_entity_state`, `control_assigned_entity`, `get_calendar_events`, `search_calendar_events`, `check_calendar_availability`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `get_person_location`, `get_person_location_history`, `get_device_location`, `get_todo_items`, `add_todo_item`, `update_todo_item`, `remove_todo_item`, and `send_message_to_person`. Unknown or refused speakers receive no tools.
+Speaking Person offers sixteen tools to recognised speakers: `get_entity_state`, `control_assigned_entity`, `get_calendar_events`, `search_calendar_events`, `check_calendar_availability`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `get_person_location`, `get_person_location_history`, `get_device_location`, `get_todo_items`, `add_todo_item`, `update_todo_item`, `remove_todo_item`, and `send_message_to_person`. Unknown or refused speakers receive no tools beyond the household device tools, and nobody gets tools unless a Conversation Proxy is loaded.
 
-The full-prompt preview combines the Speaking Person section with a sample registered device's Speaking Device section. It uses the signed-in account when the options flow provides its ID, otherwise the Home Assistant owner account. The sample device is illustrative; Home Assistant controls the order of selected APIs. The preview excludes the conversation agent's own prompt and Home Assistant's API wrapper text.
+The full-prompt preview shows what the proxy appends: the Speaking Person section (when that entry exists) and a sample registered device's Speaking Device section. It uses the signed-in account when the options flow provides its ID, otherwise the Home Assistant owner account. The sample device is illustrative; The preview excludes the conversation agent's own prompt and Home Assistant's API wrapper text.
 
 ## Commands
 
@@ -68,7 +72,9 @@ After changes, run `.venv/bin/ruff check .` and `npm run format:check`. If Prett
 - Fixed reply wording belongs in tool results (for example "reply with exactly ..."), not in the prompt paragraph in the README. Do not modify the user's live conversation prompt unless explicitly asked.
 - A tool result or prompt text is an instruction to the model, not enforcement. Say so in docs.
 - Update `README.md` and `docs/reference.md` when behaviour, tools or prompt sections change. Keep the warnings about entities bypassing Assist's exposed-entities setting accurate.
-- Keep prompt-caching guidance provider-neutral unless asked otherwise. Home Assistant appends selected APIs at the bottom of the conversation prompt in the order they were added; this integration cannot choose that order.
+- Keep prompt-caching guidance provider-neutral unless asked otherwise. The proxy appends the changing speaker and device text at the end of the system prompt through `extra_system_prompt`, after the prompt, APIs and tools.
+- **Deny unknown speakers** and the refusal lines live only on the Conversation Proxy; new proxies are seeded from values saved on Speaking Person. The denial rule, in `wrapper.should_deny`: an unknown speaker is refused when denying is on or the home alarm counts as armed; a configured person is always allowed; the alarm never loosens denying. Sentence triggers, local intents and direct calls to the wrapped agent bypass the proxy; say so in docs.
+- Tests that exercise the Speaking Person API need a loaded proxy: use `add_wrapper` in `tests/tools/helpers.py`. Home Assistant's conversation component needs `hassil`, `home-assistant-intents` and `gazetteer-matcher`, pinned in `requirements_test.txt`.
 - Location history requires Home Assistant Recorder history and is limited to 31 days.
 
 ## Changelog and releases

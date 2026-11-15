@@ -10,11 +10,16 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.auth import EVENT_USER_REMOVED, EVENT_USER_UPDATED
-from homeassistant.config_entries import ConfigEntry, ConfigSubentry
+from homeassistant.config_entries import (
+    SIGNAL_CONFIG_ENTRY_CHANGED,
+    ConfigEntry,
+    ConfigSubentry,
+)
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.debounce import Debouncer
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.start import async_at_started
 
 from .const import (
@@ -30,14 +35,19 @@ from .const import (
     CONF_PRIVATE_ENTITIES,
     CONF_TODO_LIST,
     DOMAIN,
+    PERSON_API_ID,
     SUBENTRY_ENTITY_LINK,
     SUBENTRY_SPEAKER,
 )
 from .people import first_name, link_title, speaker_title, speaker_user_id
+from .wrapper import person_entry, selected_apis, wrapped_agent, wrapper_entry
 
 ISSUE_STALE_ENTITIES = "stale_entities"
 ISSUE_MISSING_ACCOUNT = "missing_account"
 ISSUE_MISSING_PERSON = "missing_person"
+ISSUE_NO_WRAPPER = "no_wrapper"
+ISSUE_WRAPPER_NO_API = "wrapper_missing_api"
+ISSUE_WRAPPER_NO_PERSON_ENTRY = "wrapper_missing_person_entry"
 _CHECK_DELAY = 2.0  # seconds; registry changes often arrive in bursts
 
 # Settings keys that hold entity ids, per subentry type.
@@ -113,6 +123,8 @@ def _issue_id(kind: str, entry: ConfigEntry, sub: ConfigSubentry) -> str:
 async def async_check_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Create or clear this entry's Repairs issues to match its current settings."""
     wanted: dict[str, tuple[str, dict[str, str]]] = {}
+    if wrapper_entry(hass) is None:
+        wanted[f"{ISSUE_NO_WRAPPER}_{entry.entry_id}_wrapper"] = (ISSUE_NO_WRAPPER, {})
     for sub in list(entry.subentries.values()):
         if sub.subentry_type == SUBENTRY_SPEAKER:
             # Keep the listed name in step with the person entity's name.
@@ -207,6 +219,9 @@ def async_setup_repairs(hass: HomeAssistant, entry: ConfigEntry) -> None:
     entry.async_on_unload(
         hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, _registry_updated)
     )
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, SIGNAL_CONFIG_ENTRY_CHANGED, _schedule)
+    )
     entry.async_on_unload(hass.bus.async_listen(EVENT_USER_REMOVED, _schedule))
     entry.async_on_unload(hass.bus.async_listen(EVENT_USER_UPDATED, _schedule))
     entry.async_on_unload(entry.add_update_listener(_on_entry_update(_schedule)))
@@ -218,3 +233,66 @@ def _on_entry_update(schedule):
         schedule()
 
     return _listener
+
+
+async def async_check_wrapper(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Raise or clear the conversation proxy's Repairs issues."""
+    agent = wrapped_agent(entry)
+    wanted: dict[str, tuple[str, dict[str, str]]] = {}
+    apis = selected_apis(hass, agent)
+    if apis is not None and PERSON_API_ID not in apis:
+        wanted[f"{ISSUE_WRAPPER_NO_API}_{entry.entry_id}_wrapper"] = (
+            ISSUE_WRAPPER_NO_API,
+            {"agent": agent},
+        )
+    if person_entry(hass) is None:
+        wanted[f"{ISSUE_WRAPPER_NO_PERSON_ENTRY}_{entry.entry_id}_wrapper"] = (
+            ISSUE_WRAPPER_NO_PERSON_ENTRY,
+            {},
+        )
+    owner = f"_{entry.entry_id}_"
+    for domain, issue_id in list(ir.async_get(hass).issues):
+        if domain == DOMAIN and owner in issue_id and issue_id not in wanted:
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
+    for issue_id, (kind, placeholders) in wanted.items():
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=kind,
+            translation_placeholders=placeholders,
+        )
+
+
+@callback
+def async_setup_wrapper_repairs(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Re-check the wrapper whenever entries or entities change."""
+
+    async def _check() -> None:
+        await async_check_wrapper(hass, entry)
+
+    debouncer = Debouncer(
+        hass, None, cooldown=_CHECK_DELAY, immediate=False, function=_check
+    )
+    started = False
+
+    @callback
+    def _schedule(*_args: Any) -> None:
+        if started:
+            debouncer.async_schedule_call()
+
+    async def _at_started(_hass: HomeAssistant) -> None:
+        nonlocal started
+        started = True
+        await async_check_wrapper(hass, entry)
+
+    entry.async_on_unload(async_at_started(hass, _at_started))
+    entry.async_on_unload(
+        hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, _schedule)
+    )
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, SIGNAL_CONFIG_ENTRY_CHANGED, _schedule)
+    )
+    entry.async_on_unload(debouncer.async_shutdown)

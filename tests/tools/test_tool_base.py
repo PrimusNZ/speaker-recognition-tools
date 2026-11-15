@@ -11,6 +11,7 @@ from custom_components.speaker_recognition_tools import (
 from custom_components.speaker_recognition_tools.prompt import Person
 from tests.tools.helpers import (
     instance,
+    person_prompt,
 )
 
 
@@ -140,7 +141,7 @@ async def test_tool_descriptions_document_person_aliases(hass, users) -> None:
 
 
 async def test_others_private_entities_are_not_in_the_prompt(hass, users) -> None:
-    prompt = (await instance(hass, users["James"])).api_prompt
+    prompt = await person_prompt(hass, users["James"].id)
     assert "calendar.sarah_home" in prompt
     assert "calendar.ann_shared" in prompt
     for hidden in (
@@ -162,7 +163,7 @@ async def test_others_private_entities_are_not_in_the_prompt(hass, users) -> Non
 async def test_owners_private_entities_are_shown_without_privacy_markers(
     hass, users
 ) -> None:
-    prompt = (await instance(hass, users["Sarah"])).api_prompt
+    prompt = await person_prompt(hass, users["Sarah"].id)
     assert " - calendar.sarah_diary" in prompt
     assert " - calendar.sarah_home\n" in prompt or " - calendar.sarah_home |" in prompt
     assert "(private)" not in prompt

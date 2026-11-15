@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
     CONF_ADDRESS_AS,
+    CONF_ALARM_ENTITY,
     CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
@@ -17,10 +18,11 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_THIRD_PERSON_REFERENCE,
     CONF_TOOL_TYPE,
     CONF_USER_ID,
+    CONF_WRAPPED_AGENT,
     DOMAIN,
     SUBENTRY_SPEAKER,
-    TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
+    TOOL_TYPE_WRAPPER,
 )
 from custom_components.speaker_recognition_tools.diagnostics import (
     async_get_config_entry_diagnostics,
@@ -31,7 +33,13 @@ async def _entry(hass: HomeAssistant, tool_type: str, subentries=()):
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: tool_type},
-        options={CONF_DENY_UNKNOWN: True} if tool_type == TOOL_TYPE_PERSON else {},
+        options={}
+        if tool_type == TOOL_TYPE_PERSON
+        else {
+            CONF_WRAPPED_AGENT: "conversation.agent",
+            CONF_DENY_UNKNOWN: True,
+            CONF_ALARM_ENTITY: "alarm_control_panel.home",
+        },
         subentries_data=list(subentries),
     )
     entry.add_to_hass(hass)
@@ -74,13 +82,9 @@ async def test_person_diagnostics_leave_out_names(hass: HomeAssistant) -> None:
     data = await async_get_config_entry_diagnostics(hass, entry)
 
     assert data["api_registered"] is True
-    assert data["options"] == {
-        "deny_unknown": True,
-        "custom_refusal_lines": False,
-        "min_confidence": 0,
-    }
+    assert data["options"] == {"min_confidence": 0}
     assert data["speaker_recognition_history_readable"] is False
-    assert data["open_issues"] == ["missing_person", "stale_entities"]
+    assert data["open_issues"] == ["missing_person", "no_wrapper", "stale_entities"]
     (person,) = data["people"]
     assert person == {
         "person": "person_1",
@@ -107,11 +111,16 @@ async def test_person_diagnostics_leave_out_names(hass: HomeAssistant) -> None:
         assert secret not in text
 
 
-async def test_device_diagnostics(hass: HomeAssistant) -> None:
-    entry = await _entry(hass, TOOL_TYPE_DEVICE)
+async def test_wrapper_diagnostics(hass: HomeAssistant) -> None:
+    entry = await _entry(hass, TOOL_TYPE_WRAPPER)
     data = await async_get_config_entry_diagnostics(hass, entry)
     assert data == {
-        "tool_type": TOOL_TYPE_DEVICE,
-        "api_registered": True,
-        "open_issues": [],
+        "tool_type": TOOL_TYPE_WRAPPER,
+        "options": {
+            "deny_unknown": True,
+            "custom_refusal_lines": False,
+            "alarm_set": True,
+            "alarm_unknown_disarmed": False,
+        },
+        "open_issues": ["wrapper_missing_person_entry"],
     }

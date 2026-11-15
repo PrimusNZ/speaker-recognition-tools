@@ -2,10 +2,10 @@
 
 Tell your Home Assistant voice assistant who is speaking and which device they are speaking to, so it can answer "What's on my calendar?", "Where is my phone?" or "Add 'renew the car registration' to my to-do list" for the right person.
 
-It adds two options for your conversation agent:
+It adds two things for your conversation agent:
 
-- **Speaking Person** tells the agent who is speaking, what to call them, and gives it a set of tools for their calendars, to-do list, location, devices and messages.
-- **Speaking Device** tells the agent which device (and room) the request came from, so "here" and "this room" work.
+- **Conversation Proxy** (required) sits in front of your agent. It refuses speakers who aren't allowed, and tells your agent who is speaking and which device (and room) the request came from.
+- **Speaking Person** holds your people and gives the agent tools for their calendars, to-do list, location, devices and messages. Without the proxy it gives no tools.
 
 > **Needs Speaker Recognition.** This integration reads the result of the **[Speaker Recognition](https://github.com/conorod1992/speaker-recognition)** project, which identifies the voice and sets the Home Assistant user for each request. Install and train that first. Without it, everyone is treated as unknown.
 
@@ -30,9 +30,10 @@ Please read this. The agent's model may be a cloud service, and these tools hand
 ## Set it up
 
 1. Install it through HACS (add this repository as a custom repository if it isn't listed) and restart Home Assistant. You need Home Assistant 2026.10 or later.
-2. Go to **Settings > Devices & services > Add integration**, add **Speaker Recognition Tools**, and choose **Speaking Person**. Do it again for **Speaking Device** if you want it.
-3. In your conversation agent's settings, add the new APIs to the list of LLM APIs, after any APIs with fixed instructions.
-4. Add this to your agent's own prompt so it trusts the added sections:
+2. Under **Settings > Devices & services > Add integration**, add **Speaker Recognition Tools** twice: choose **Speaking Person**, then **Conversation Proxy**.
+3. In the proxy, pick your conversation agent. In that agent's settings, tick **Speaking Person** under its LLM APIs.
+4. Use the proxy as the conversation agent in your voice pipeline. If you use Speaker Recognition's own conversation proxy (a different thing), point it at this one: pipeline, Speaker Recognition's proxy, this proxy, your agent.
+5. Add this to your agent's own prompt so it trusts the added sections:
 
    ```text
    Who is speaking, what to call them, which device they are using, and which people and entities belong to this household are given to you in the SPEAKING PERSON, SPEAKING DEVICE, ENTITY MAPPINGS and PEOPLE sections added to this prompt.
@@ -40,17 +41,17 @@ Please read this. The agent's model may be a cloud service, and these tools hand
    Treat those sections as correct. Never guess who is speaking.
    ```
 
-   If your prompt gives examples of how to address the speaker, write `[direct address]` where their name or title goes. The added text tells the agent to use the speaker's form of address in its place.
+   If your prompt gives examples of how to address the speaker, write `[direct address]` where their name or title goes.
+
+## The Conversation Proxy
+
+Its settings are **Deny unknown speakers**, the refusal lines, and an optional **Home alarm**. An unknown speaker is refused when **Deny unknown speakers** is on or the alarm is in any state other than disarmed; if the alarm state is unknown, it counts as armed unless you turn on **Treat an unknown alarm state as disarmed**. People set up under Speaking Person are always allowed. A refused speaker hears one of your refusal lines and your agent is never called.
+
+It isn't a lock on the whole house: sentence triggers and Home Assistant's built-in intents run before any agent, and your agent can still be called directly by name, in which case it gets the tools but not the speaker and device text.
 
 ## Prompt caching
 
-Who is speaking, and which device they're using, change from request to request. If your AI provider caches prompts, you can still benefit from the part that stays the same, as long as the changing parts come last.
-
-- Add Speaking Person and Speaking Device to your agent's list of APIs **after** any APIs with fixed instructions. Home Assistant adds them to the prompt in the order you added them.
-- Keep your own prompt and your model choice stable.
-- Recognised speakers get tools and unrecognised ones don't, so those requests may not share a cache.
-
-Caching also needs the stable part to be long enough for your provider, and it's never guaranteed. See the [reference](docs/reference.md#prompt-caching) for more.
+The proxy adds the changing speaker and device text at the end of the system prompt, so the part before it stays cacheable. Keep your own prompt and model stable. Recognised speakers get tools and others don't, so those requests may not share a cache. See the [reference](docs/reference.md#prompt-caching).
 
 ## Add your people
 
@@ -74,7 +75,7 @@ Their phones and trackers come from the person in **Settings > People**, so you 
 
 A **Linked device** gives one spoken name to two entities, one for status and one for actions. For example, "the heater" can read `sensor.heater_status` and switch `switch.heater`. Add one under Speaking Person.
 
-The settings (gear icon) cover how unknown speakers are addressed, **Deny unknown speakers** (refuse anyone who isn't recognised), the refusal lines, **Household devices** and their aliases, and **Minimum recognition confidence for changes**. **Preview prompt** shows exactly what the agent will be told for any person.
+The settings (gear icon) cover how unknown speakers are addressed, **Household devices** and their aliases, and **Minimum recognition confidence for changes**. **Preview prompt** shows exactly what the agent will be told for any person.
 
 ## Household devices
 
@@ -105,9 +106,9 @@ Anything that changes something takes a preview and a yes. Locks, alarm panels a
 - **Location history** ("When did Sarah leave?") needs the Home Assistant Recorder and looks back at most 31 days.
 - **Which actions ask for a yes first:** unlocking, disarming an alarm panel, opening a door, gate or garage door, anything on a person's **Entities that need confirmation** list or a linked device with **Actions need confirmation**, and every change when recognition confidence is below the minimum you set. Calendar, to-do and message changes always ask.
 - **Your own prompt** is plain text, not a template, and Home Assistant wraps each API's text in its own "Follow these instructions" lines.
-- **A misrecognised voice** is treated as unknown. With **Deny unknown speakers** on, that means a refusal.
+- **A misrecognised voice** is treated as unknown. With **Deny unknown speakers** on in the proxy, that means a refusal.
 - **For automations and scripts:** the **Last speaker** sensor and the `speaker_recognition_tools_speaker` event say who spoke and where, and the `speaker_recognition_tools.get_user_level` action tells a script whether someone is an administrator.
-- **Upgrading from an older version:** people are moved onto their person entity, and calendars move to the **Calendars** field, the first time the new version loads. Anyone without a matching person gets a repair notice. Link a person to their account in Settings > People, then edit them and pick it.
+- **Upgrading from an older version:** Speaking Device is gone and any old entry is deleted, so add the Conversation Proxy, which now adds the device text. Until you do, Speaking Person gives the agent no tools and a repair notice says so. People move onto their person entity, and calendars to the **Calendars** field, the first time the new version loads. Anyone without a matching person gets a repair notice: link a person to their account in Settings > People, then edit them and pick it.
 
 ## More
 

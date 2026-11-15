@@ -5,11 +5,11 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
+from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
     CONF_TOOL_TYPE,
-    DEVICE_API_ID,
     DOMAIN,
     PERSON_API_ID,
     TOOL_TYPE_DEVICE,
@@ -39,44 +39,20 @@ async def _add(hass: HomeAssistant, tool_type: str) -> MockConfigEntry:
     return entry
 
 
-@pytest.mark.parametrize(
-    ("tool_type", "api_id", "other_id"),
-    [
-        (TOOL_TYPE_PERSON, PERSON_API_ID, DEVICE_API_ID),
-        (TOOL_TYPE_DEVICE, DEVICE_API_ID, PERSON_API_ID),
-    ],
-)
-async def test_setup_registers_only_its_own_api(
-    hass: HomeAssistant, tool_type: str, api_id: str, other_id: str
-) -> None:
-    entry = await _add(hass, tool_type)
+async def test_setup_registers_the_person_api_only(hass: HomeAssistant) -> None:
+    entry = await _add(hass, TOOL_TYPE_PERSON)
     assert entry.state is ConfigEntryState.LOADED
-    assert api_id in _ids(hass)
-    assert other_id not in _ids(hass)
+    assert _ids(hass) == {PERSON_API_ID}
 
 
-@pytest.mark.parametrize(
-    ("tool_type", "api_id"),
-    [(TOOL_TYPE_PERSON, PERSON_API_ID), (TOOL_TYPE_DEVICE, DEVICE_API_ID)],
-)
-async def test_unload_unregisters_the_api(
-    hass: HomeAssistant, tool_type: str, api_id: str
-) -> None:
-    entry = await _add(hass, tool_type)
+async def test_unload_unregisters_the_api(hass: HomeAssistant) -> None:
+    entry = await _add(hass, TOOL_TYPE_PERSON)
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.NOT_LOADED
-    assert api_id not in _ids(hass)
-    with pytest.raises(HomeAssistantError):
-        await llm.async_get_api(hass, api_id, _context())
-
-
-async def test_unloading_one_entry_keeps_the_other(hass: HomeAssistant) -> None:
-    person = await _add(hass, TOOL_TYPE_PERSON)
-    await _add(hass, TOOL_TYPE_DEVICE)
-    assert await hass.config_entries.async_unload(person.entry_id)
-    assert _ids(hass) >= {DEVICE_API_ID}
     assert PERSON_API_ID not in _ids(hass)
+    with pytest.raises(HomeAssistantError):
+        await llm.async_get_api(hass, PERSON_API_ID, _context())
 
 
 async def test_reload_registers_the_api_again(hass: HomeAssistant) -> None:
@@ -88,7 +64,17 @@ async def test_reload_registers_the_api_again(hass: HomeAssistant) -> None:
 
 
 async def test_remove_entry_unregisters_the_api(hass: HomeAssistant) -> None:
-    entry = await _add(hass, TOOL_TYPE_DEVICE)
+    entry = await _add(hass, TOOL_TYPE_PERSON)
     assert await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
-    assert DEVICE_API_ID not in _ids(hass)
+    assert PERSON_API_ID not in _ids(hass)
+
+
+async def test_old_speaking_device_entry_is_deleted_on_setup(
+    hass: HomeAssistant,
+) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_TOOL_TYPE: TOOL_TYPE_DEVICE})
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert hass.config_entries.async_entries(DOMAIN) == []

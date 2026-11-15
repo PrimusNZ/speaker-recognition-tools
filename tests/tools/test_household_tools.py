@@ -26,7 +26,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
     CONF_ADDRESS_AS,
-    CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_HOUSEHOLD_ALIASES,
     CONF_HOUSEHOLD_DEVICES,
@@ -39,6 +38,7 @@ from custom_components.speaker_recognition_tools.const import (
     SUBENTRY_SPEAKER,
     TOOL_TYPE_PERSON,
 )
+from tests.tools.helpers import add_wrapper, person_prompt
 
 CLIMATE = {
     "hvac_modes": ["off", "fan_only", "heat_cool", "dry", "cool"],
@@ -121,7 +121,6 @@ async def _setup(
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
         options={
             CONF_UNKNOWN_ADDRESS_AS: "Unknown Person",
-            CONF_DENY_UNKNOWN: deny,
             CONF_HOUSEHOLD_ALIASES: aliases or {},
             CONF_HOUSEHOLD_DEVICES: household
             if household is not None
@@ -149,6 +148,7 @@ async def _setup(
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    add_wrapper(hass, deny)
     return james
 
 
@@ -169,14 +169,7 @@ async def _call(hass, user_id, device_id, tool, **args):
 
 
 async def _prompt(hass, user_id) -> str:
-    context = llm.LLMContext(
-        platform="test",
-        context=Context(user_id=user_id),
-        language="en",
-        assistant="conversation",
-        device_id=None,
-    )
-    return (await llm.async_get_api(hass, PERSON_API_ID, context)).api_prompt
+    return await person_prompt(hass, user_id)
 
 
 async def _tool_names(hass, user_id) -> list[str]:

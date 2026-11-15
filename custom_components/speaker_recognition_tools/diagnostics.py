@@ -11,6 +11,8 @@ from homeassistant.helpers import llm
 
 from .const import (
     CONF_ADMIN_ENTITIES,
+    CONF_ALARM_ENTITY,
+    CONF_ALARM_UNKNOWN_DISARMED,
     CONF_CALENDARS,
     CONF_CONFIRM_ENTITIES,
     CONF_DENY_UNKNOWN,
@@ -24,7 +26,6 @@ from .const import (
     CONF_REFUSAL_LINES,
     CONF_TOOL_TYPE,
     CONF_USER_ID,
-    DEVICE_API_ID,
     DOMAIN,
     PERSON_API_ID,
     SUBENTRY_ENTITY_LINK,
@@ -41,10 +42,8 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Describe the entry's setup without names, aliases or addresses."""
     is_person = entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_PERSON
-    api_id = PERSON_API_ID if is_person else DEVICE_API_ID
     result: dict[str, Any] = {
         "tool_type": entry.data.get(CONF_TOOL_TYPE),
-        "api_registered": any(api.id == api_id for api in llm.async_get_apis(hass)),
         "open_issues": sorted(
             issue.translation_key or issue_id
             for (domain, issue_id), issue in ir.async_get(hass).issues.items()
@@ -52,14 +51,20 @@ async def async_get_config_entry_diagnostics(
         ),
     }
     if not is_person:
+        options = entry.options
+        result["options"] = {
+            "deny_unknown": options.get(CONF_DENY_UNKNOWN, False),
+            "custom_refusal_lines": CONF_REFUSAL_LINES in options,
+            "alarm_set": bool(options.get(CONF_ALARM_ENTITY)),
+            "alarm_unknown_disarmed": options.get(CONF_ALARM_UNKNOWN_DISARMED, False),
+        }
         return result
 
+    result["api_registered"] = any(
+        api.id == PERSON_API_ID for api in llm.async_get_apis(hass)
+    )
     options = entry.options
-    result["options"] = {
-        "deny_unknown": options.get(CONF_DENY_UNKNOWN, False),
-        "custom_refusal_lines": CONF_REFUSAL_LINES in options,
-        "min_confidence": options.get(CONF_MIN_CONFIDENCE, 0),
-    }
+    result["options"] = {"min_confidence": options.get(CONF_MIN_CONFIDENCE, 0)}
     result["speaker_recognition_history_readable"] = history_available(hass)
     people = []
     labels: dict[str, str] = {}

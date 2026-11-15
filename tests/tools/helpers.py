@@ -4,15 +4,27 @@ from __future__ import annotations
 
 import datetime
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import (
     llm,
 )
 from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.speaker_recognition_tools.const import (
+    CONF_DENY_UNKNOWN,
+    CONF_TOOL_TYPE,
+    CONF_WRAPPED_AGENT,
+    DOMAIN,
     PERSON_API_ID,
+    TOOL_TYPE_WRAPPER,
 )
+from custom_components.speaker_recognition_tools.llm_api import async_person_prompt
+from custom_components.speaker_recognition_tools.people import (
+    async_configured_people,
+)
+from custom_components.speaker_recognition_tools.wrapper import person_entry
 
 PEOPLE = {
     # name: (address_as, entities, private)
@@ -111,3 +123,22 @@ def local(day: int, hour: int, minute: int = 0, month: int = 10) -> datetime.dat
 
 def now() -> datetime.datetime:
     return local(26, 17, 0)  # a Monday
+
+
+def add_wrapper(hass: HomeAssistant, deny: bool = False) -> MockConfigEntry:
+    """Add a loaded Conversation Proxy, which owns denial and enables the tools."""
+    wrapper = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_TOOL_TYPE: TOOL_TYPE_WRAPPER},
+        options={CONF_WRAPPED_AGENT: "conversation.agent", CONF_DENY_UNKNOWN: deny},
+    )
+    wrapper.add_to_hass(hass)
+    wrapper.mock_state(hass, ConfigEntryState.LOADED)
+    return wrapper
+
+
+async def person_prompt(hass: HomeAssistant, user_id) -> str:
+    """The SPEAKING PERSON text, which the wrapper appends to the prompt."""
+    entry = person_entry(hass)
+    people = await async_configured_people(hass, entry)
+    return await async_person_prompt(hass, entry, user_id, people)

@@ -32,9 +32,11 @@ from custom_components.speaker_recognition_tools.const import (
     SUBENTRY_SPEAKER,
     TOOL_TYPE_PERSON,
 )
+from tests.tools.helpers import add_wrapper
 
 
 async def _setup(hass: HomeAssistant, user_id: str, entities: list[str], **extra):
+    add_wrapper(hass)
     hass.states.async_set(
         "person.sam", "home", {"user_id": user_id, "friendly_name": "Sam"}
     )

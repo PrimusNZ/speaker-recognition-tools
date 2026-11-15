@@ -33,6 +33,8 @@ from homeassistant.helpers import (
 from .const import (
     CONF_ADDRESS_AS,
     CONF_ADMIN_ENTITIES,
+    CONF_ALARM_ENTITY,
+    CONF_ALARM_UNKNOWN_DISARMED,
     CONF_CALENDARS,
     CONF_CONFIRM_ENTITIES,
     CONF_DENY_UNKNOWN,
@@ -61,14 +63,15 @@ from .const import (
     CONF_TOOL_TYPE,
     CONF_UNKNOWN_ADDRESS_AS,
     CONF_USER_ID,
+    CONF_WRAPPED_AGENT,
     DEFAULT_REFUSAL_LINES,
     DEFAULT_UNKNOWN_ADDRESS_AS,
     DOMAIN,
     SUBENTRY_ENTITY_LINK,
     SUBENTRY_PREVIEW,
     SUBENTRY_SPEAKER,
-    TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
+    TOOL_TYPE_WRAPPER,
 )
 from .household_tools import household_devices
 from .people import (
@@ -85,6 +88,14 @@ from .people import (
     todo_settings,
 )
 from .prompt import build_device_prompt, build_person_prompt
+from .wrapper import (
+    denial_settings,
+    refusal_lines,
+    wrapper_entry,
+)
+from .wrapper import (
+    person_entry as configured_person_entry,
+)
 
 _PREVIEW_UNKNOWN = "__unknown_speaker__"
 
@@ -98,9 +109,33 @@ class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        options = ["speaking_person"]
+        if wrapper_entry(self.hass) is None:
+            options.append("conversation_wrapper")
         return self.async_show_menu(
-            step_id="user",
-            menu_options=["speaking_person", "speaking_device", "preview_full"],
+            step_id="user", menu_options=[*options, "preview_full"]
+        )
+
+    async def async_step_conversation_wrapper(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Add the conversation proxy, seeded from Speaking Person's settings."""
+        await self.async_set_unique_id(f"{DOMAIN}_{TOOL_TYPE_WRAPPER}")
+        self._abort_if_unique_id_configured()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _wrapper_errors(self.hass, user_input)
+            if not errors:
+                return self.async_create_entry(
+                    title="Conversation Proxy",
+                    data={CONF_TOOL_TYPE: TOOL_TYPE_WRAPPER},
+                    options=_wrapper_options(user_input),
+                )
+        defaults = user_input or _wrapper_seed(self.hass)
+        return self.async_show_form(
+            step_id="conversation_wrapper",
+            data_schema=_wrapper_schema(defaults),
+            errors=errors,
         )
 
     async def async_step_preview_full(
@@ -131,20 +166,7 @@ class SpeakerRecognitionToolsFlow(ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title="Speaking Person",
             data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
-            options={
-                CONF_UNKNOWN_ADDRESS_AS: DEFAULT_UNKNOWN_ADDRESS_AS,
-                CONF_DENY_UNKNOWN: False,
-                CONF_REFUSAL_LINES: DEFAULT_REFUSAL_LINES,
-            },
-        )
-
-    async def async_step_speaking_device(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        await self.async_set_unique_id(f"{DOMAIN}_{TOOL_TYPE_DEVICE}")
-        self._abort_if_unique_id_configured()
-        return self.async_create_entry(
-            title="Speaking Device", data={CONF_TOOL_TYPE: TOOL_TYPE_DEVICE}
+            options={CONF_UNKNOWN_ADDRESS_AS: DEFAULT_UNKNOWN_ADDRESS_AS},
         )
 
     @staticmethod
@@ -173,10 +195,27 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        if self.config_entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_WRAPPER:
+            return await self.async_step_wrapper()
         if self.config_entry.data.get(CONF_TOOL_TYPE) != TOOL_TYPE_PERSON:
             return self.async_abort(reason="no_options")
         return self.async_show_menu(
             step_id="init", menu_options=["settings", "preview"]
+        )
+
+    async def async_step_wrapper(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Settings for the conversation proxy."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _wrapper_errors(self.hass, user_input)
+            if not errors:
+                return self.async_create_entry(data=_wrapper_options(user_input))
+        return self.async_show_form(
+            step_id="wrapper",
+            data_schema=_wrapper_schema(user_input or self.config_entry.options),
+            errors=errors,
         )
 
     async def async_step_settings(
@@ -200,9 +239,6 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                 return self.async_create_entry(data=options)
         schema = vol.Schema(
             {
-                vol.Required(
-                    CONF_DENY_UNKNOWN, default=opts.get(CONF_DENY_UNKNOWN, False)
-                ): selector.BooleanSelector(),
                 vol.Optional(
                     CONF_HOUSEHOLD_DEVICES,
                     description={
@@ -229,10 +265,6 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                     ),
                 ): selector.TextSelector(),
                 vol.Required(
-                    CONF_REFUSAL_LINES,
-                    default=opts.get(CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES),
-                ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
-                vol.Required(
                     CONF_MIN_CONFIDENCE, default=opts.get(CONF_MIN_CONFIDENCE, 0)
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
@@ -242,7 +274,9 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
             }
         )
         return self.async_show_form(
-            step_id="settings", data_schema=schema, errors=errors
+            step_id="settings",
+            data_schema=schema,
+            errors=errors,
         )
 
     async def async_step_preview(
@@ -268,8 +302,8 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
                         CONF_LEGACY_UNKNOWN_ADDRESS_AS, DEFAULT_UNKNOWN_ADDRESS_AS
                     ),
                 ),
-                deny_unknown=self.config_entry.options.get(CONF_DENY_UNKNOWN, False),
-                refusal_lines=_configured_refusal_lines(self.config_entry),
+                deny_unknown=denial_settings(self.hass)[0],
+                refusal_lines=_configured_refusal_lines(self.hass),
                 household_devices=tuple(
                     household_devices(
                         self.hass,
@@ -318,18 +352,68 @@ class SpeakerRecognitionToolsOptions(OptionsFlow):
         return self.async_abort(reason="preview_complete")
 
 
-def _configured_refusal_lines(entry) -> list[str]:
-    return [
-        line.strip()
-        for line in entry.options.get(
-            CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES
-        ).splitlines()
-        if line.strip()
-    ] or DEFAULT_REFUSAL_LINES.splitlines()
+def _configured_refusal_lines(hass) -> list[str]:
+    return refusal_lines(denial_settings(hass)[1])
+
+
+def _wrapper_seed(hass) -> dict[str, Any]:
+    """Defaults for a new wrapper: Speaking Person's current denial settings."""
+    source = configured_person_entry(hass)
+    options = source.options if source else {}
+    return {
+        CONF_DENY_UNKNOWN: options.get(CONF_DENY_UNKNOWN, False),
+        CONF_REFUSAL_LINES: options.get(CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES),
+    }
+
+
+def _wrapper_schema(defaults: Mapping[str, Any]) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_WRAPPED_AGENT,
+                description={"suggested_value": defaults.get(CONF_WRAPPED_AGENT)},
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="conversation")
+            ),
+            vol.Required(
+                CONF_DENY_UNKNOWN, default=defaults.get(CONF_DENY_UNKNOWN, False)
+            ): selector.BooleanSelector(),
+            vol.Required(
+                CONF_REFUSAL_LINES,
+                default=defaults.get(CONF_REFUSAL_LINES, DEFAULT_REFUSAL_LINES),
+            ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+            vol.Optional(
+                CONF_ALARM_ENTITY,
+                description={"suggested_value": defaults.get(CONF_ALARM_ENTITY)},
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="alarm_control_panel")
+            ),
+            vol.Required(
+                CONF_ALARM_UNKNOWN_DISARMED,
+                default=defaults.get(CONF_ALARM_UNKNOWN_DISARMED, False),
+            ): selector.BooleanSelector(),
+        }
+    )
+
+
+def _wrapper_options(user_input: dict[str, Any]) -> dict[str, Any]:
+    """The saved settings; a cleared alarm is left out."""
+    options = dict(user_input)
+    if not options.get(CONF_ALARM_ENTITY):
+        options.pop(CONF_ALARM_ENTITY, None)
+    return options
+
+
+def _wrapper_errors(hass, user_input: dict[str, Any]) -> dict[str, str]:
+    """A wrapper cannot wrap another wrapper, which could loop."""
+    registry_entry = er.async_get(hass).async_get(user_input[CONF_WRAPPED_AGENT])
+    if registry_entry is not None and registry_entry.platform == DOMAIN:
+        return {CONF_WRAPPED_AGENT: "wrapped_is_wrapper"}
+    return {}
 
 
 async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
-    """Build only the prompt sections from configured integration APIs."""
+    """Build the prompt sections the Conversation Proxy adds."""
     entries = hass.config_entries.async_entries(DOMAIN)
     person_entry = next(
         (
@@ -339,14 +423,7 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
         ),
         None,
     )
-    device_entry = next(
-        (
-            entry
-            for entry in entries
-            if entry.data.get(CONF_TOOL_TYPE) == TOOL_TYPE_DEVICE
-        ),
-        None,
-    )
+    wrapper = wrapper_entry(hass)
     sections = []
     notes = []
     disclaimer = ""
@@ -364,8 +441,8 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
                 CONF_UNKNOWN_ADDRESS_AS,
                 options.get(CONF_LEGACY_UNKNOWN_ADDRESS_AS, DEFAULT_UNKNOWN_ADDRESS_AS),
             ),
-            deny_unknown=options.get(CONF_DENY_UNKNOWN, False),
-            refusal_lines=_configured_refusal_lines(person_entry),
+            deny_unknown=denial_settings(hass)[0],
+            refusal_lines=_configured_refusal_lines(hass),
             household_devices=tuple(
                 household_devices(
                     hass,
@@ -381,26 +458,21 @@ async def _full_prompt_content(hass, context) -> tuple[str, str, str]:
             else "This flow did not provide the signed-in account ID, so the Home Assistant owner account is used."
         )
 
-    if device_entry:
-        device_prompt, device_note = _sample_device_prompt(hass)
-        sections.append(device_prompt)
-        disclaimer = (
-            "Disclaimer: This is an example rendering. The Speaking Device section "
-            "may show a randomly selected registered device."
-        )
-        notes.append(device_note)
-
-    if not sections:
-        return (
-            "",
-            "",
-            "Neither Speaking Person nor Speaking Device is configured, so the integration adds no prompt sections.",
-        )
+    device_prompt, device_note = _sample_device_prompt(hass)
+    sections.append(device_prompt)
+    disclaimer = (
+        "Disclaimer: This is an example rendering. The Speaking Device section "
+        "may show a randomly selected registered device."
+    )
+    notes.append(device_note)
 
     notes.append(
-        "A conversation agent receives only APIs selected for that agent. Home Assistant "
-        "appends them after the conversation prompt in the order they were added. This "
-        "preview excludes the agent's own prompt and Home Assistant's API wrapper text."
+        "The Conversation Proxy adds these sections to the agent's prompt on each "
+        "request; Speaking Person only supplies the tools."
+        if wrapper
+        else "These sections are only added by the Conversation Proxy, which is not "
+        "set up yet. This preview excludes the agent's own prompt and Home "
+        "Assistant's API wrapper text."
     )
     return "\n\n".join(sections), disclaimer, " ".join(notes)
 

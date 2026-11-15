@@ -3,6 +3,35 @@
 All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.0] - 2026-11-15
+
+### Breaking changes
+
+This release changes how the integration works. Read this before upgrading.
+
+- **The Conversation Proxy is now required.** Speaking Person used to put the speaker's details into the prompt itself. Now a new Conversation Proxy does that, and Speaking Person only supplies the tools. Add it under **Add integration > Speaker Recognition Tools > Conversation Proxy**, pick your conversation agent, then use the proxy as the agent in your voice pipeline. Until you do, the Speaking Person API gives the agent **no tools** and a Repairs issue tells you so.
+- **Speaking Device is removed.** The proxy adds the device section itself. Any old Speaking Device entry is deleted when the integration loads, so untick it on your agent.
+- **Deny unknown speakers and the refusal lines moved** from Speaking Person's settings to the Conversation Proxy. The proxy's form starts from your saved values.
+- **Keep Speaking Person ticked on your agent.** It still provides the tools.
+- **Speaker and device text no longer comes from the APIs.** An agent called directly by name, skipping the proxy, gets the tools but not the speaker and device text.
+
+### Added
+
+- Conversation Proxy: an Add integration entry that creates a conversation entity wrapping a chosen conversation agent. It refuses unknown speakers before the wrapped agent is called, and never calls the agent when it refuses. A refused speaker hears one of the refusal lines, and the Last speaker sensor and event still update. It mirrors Speaker Recognition's own conversation proxy, which is a separate thing: put it after Speaker Recognition's proxy in the pipeline (pipeline, Speaker Recognition's proxy, this proxy, agent) so it sees the user that proxy set. The entity is named `<agent> Speaker Recognition Tools Proxy`.
+- Home alarm: an optional `alarm_control_panel` on the proxy. While it is in any state other than disarmed (including arming, pending and triggered), unknown speakers are refused even if **Deny unknown speakers** is off. An unknown, unavailable or missing alarm counts as armed unless **Treat an unknown alarm state as disarmed** is on. The alarm never loosens **Deny unknown speakers**, and recognised people are always allowed.
+- The proxy supplies the speaker and device prompt text: on every allowed turn it appends the Speaking Person and Speaking Device sections to the turn's `extra_system_prompt`, after any existing text.
+- Repairs: one is raised when the proxy's agent does not have Speaking Person selected, one when the proxy has no Speaking Person entry, and one on Speaking Person when there is no proxy.
+
+### Changed
+
+- With a proxy loaded, the Speaking Person API says one fixed line pointing at the sections the proxy adds. Without one it offers no tools.
+- The full prompt preview now shows what the proxy adds: the Speaking Person section (when set up) and a sample Speaking Device section.
+- Diagnostics: the proxy has its own, and the Deny unknown and refusal values moved there from Speaking Person's.
+
+### Removed
+
+- **Speaking Device** as an LLM API and as an entry.
+
 ## [0.10.3] - 2026-11-08
 
 ### Added

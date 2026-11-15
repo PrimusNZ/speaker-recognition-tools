@@ -3,12 +3,11 @@
 DOMAIN = "speaker_recognition_tools"
 CONF_TOOL_TYPE = "tool_type"
 TOOL_TYPE_PERSON = "person"
-TOOL_TYPE_DEVICE = "device"
+TOOL_TYPE_DEVICE = "device"  # removed entry type; such entries are deleted on setup
+TOOL_TYPE_WRAPPER = "wrapper"  # the conversation proxy entry
 
 PERSON_API_ID = f"{DOMAIN}_person"
 PERSON_API_NAME = "Speaking Person"
-DEVICE_API_ID = f"{DOMAIN}_device"
-DEVICE_API_NAME = "Speaking Device"
 
 SUBENTRY_SPEAKER = "speaker"  # one subentry per person: data {user_id, address_as, entities, private_entities}
 SUBENTRY_ENTITY_LINK = (
@@ -53,6 +52,9 @@ CONF_HOUSEHOLD_DEVICES = (
 CONF_HOUSEHOLD_ALIASES = "household_aliases"  # entity id to alternate names
 CONF_DENY_UNKNOWN = "deny_unknown"
 CONF_REFUSAL_LINES = "refusal_lines"  # one line per row
+CONF_WRAPPED_AGENT = "wrapped_agent"  # the conversation entity the wrapper delegates to
+CONF_ALARM_ENTITY = "alarm_entity"  # optional alarm_control_panel for the home alarm
+CONF_ALARM_UNKNOWN_DISARMED = "alarm_unknown_disarmed"  # unknown alarm state counts as disarmed
 CONF_MIN_CONFIDENCE = (
     "min_confidence"  # below this, writes also confirm identity; 0 is off
 )
@@ -84,4 +86,15 @@ DEFAULT_REFUSAL_LINES = (
     "I cannot provide access to that function.\n"
     "That command cannot be executed.\n"
     "I'm unable to comply with that request."
+)
+
+# Said by Speaking Person while the wrapper supplies the real text, so the API's header is not empty.
+WRAPPER_API_POINTER = (
+    "Who is speaking and which device they are using are described in the "
+    "SPEAKING PERSON and SPEAKING DEVICE sections of the system prompt."
+)
+# Said by Speaking Person when no wrapper is loaded.
+NO_WRAPPER_NOTICE = (
+    "Speaker recognition is not active, because the Conversation Proxy is not "
+    "set up, so no person tools are available."
 )

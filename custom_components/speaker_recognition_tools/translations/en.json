@@ -3,21 +3,42 @@
     "step": {
       "user": {
         "title": "Speaker Recognition Tools",
-        "description": "Choose which prompt addition to add, or preview the full integration prompt. Each addition can be added once and selected separately in your conversation agent's LLM APIs.",
+        "description": "Add Speaking Person for the people and tools, then the Conversation Proxy, which wraps your conversation agent, refuses speakers who are not allowed and tells the agent who is speaking and which device they are using. You can also preview the full prompt.",
         "menu_options": {
           "speaking_person": "Speaking Person",
-          "speaking_device": "Speaking Device",
-          "preview_full": "Preview full prompt"
+          "preview_full": "Preview full prompt",
+          "conversation_wrapper": "Conversation Proxy"
         }
       },
       "preview_full_result": {
         "title": "Full prompt preview",
         "description": "{disclaimer}\n\n---\n\n{prompt}\n\n---\n\n{note}"
+      },
+      "conversation_wrapper": {
+        "title": "Conversation Proxy",
+        "description": "Add the conversation agent that wraps another one. It refuses speakers who are not allowed before the wrapped agent is called, and tells the agent who is speaking and which device they are using. Sentence triggers and local intents run before any agent, and the wrapped agent can still be called directly by name.",
+        "data": {
+          "wrapped_agent": "Wrapped conversation agent",
+          "deny_unknown": "Deny unknown speakers",
+          "refusal_lines": "Refusal lines (one per row)",
+          "alarm_entity": "Home alarm",
+          "alarm_unknown_disarmed": "Treat an unknown alarm state as disarmed"
+        },
+        "data_description": {
+          "wrapped_agent": "The conversation agent to protect, for example your Anthropic agent. Select Speaking Person on that agent as well, so it gets the person tools. Then pick the proxy's entity as the agent in your voice pipeline.",
+          "deny_unknown": "When on, anyone who is not a person set up under Speaking Person, including a turn with no user, is refused and the wrapped agent is never called. Starts from the current Speaking Person setting.",
+          "refusal_lines": "A refused speaker hears one of these lines. Starts from the current Speaking Person lines.",
+          "alarm_entity": "Optional. While this alarm is in any state other than disarmed (including arming, pending and triggered), unknown speakers are refused even if Deny unknown speakers is off. Recognised people are always allowed. The alarm never loosens Deny unknown speakers.",
+          "alarm_unknown_disarmed": "What to do when the alarm is unknown, unavailable or missing. Off (the default) treats it as armed, so only recognised people are allowed. On treats it as disarmed."
+        }
       }
     },
     "abort": {
       "already_configured": "That one is already added.",
       "preview_complete": "Prompt preview closed."
+    },
+    "error": {
+      "wrapped_is_wrapper": "Choose a real conversation agent, not another proxy."
     }
   },
   "config_subentries": {
@@ -209,18 +230,14 @@
       "settings": {
         "title": "Speaking Person settings",
         "data": {
-          "deny_unknown": "Deny unknown speakers",
           "household_devices": "Household devices",
           "household_aliases": "Household device aliases",
           "unknown_address_as": "Address as for unknown speakers",
-          "refusal_lines": "Refusal lines (one per row)",
           "min_confidence": "Minimum recognition confidence for changes"
         },
         "data_description": {
-          "deny_unknown": "When on, only the people listed here can interact; everyone else, including requests with no user, is refused.",
           "household_devices": "Shared devices, such as an air conditioner, that are not assigned to a person. Anyone who is not denied can read and control them, including unknown speakers, except locks, alarm panels and door, gate or garage covers, which unknown speakers can never use. When several devices share a name, the one in the speaker's room is used, then the same floor. Calendars cannot be shared.",
           "household_aliases": "Optional. Add one line per household device in the format entity_id: alias, another alias. The first alias becomes its preferred name; the rest are alternate names, so aircon can work for the Air Conditioner. Several devices can share an alias, and the room rules then choose between them. Aliases set on the entity in Home Assistant count too.",
-          "refusal_lines": "The agent answers a denied speaker with one of these lines.",
           "min_confidence": "From 0 to 1. When Speaker Recognition scores a turn below this, every change made through the tools, including any device action, needs a spoken yes, and the agent first asks the speaker to confirm who they are. 0 turns this off. The score is read from Speaker Recognition's internal history; if it cannot be read, nothing changes."
         }
       },
@@ -234,10 +251,28 @@
       "preview_result": {
         "title": "Generated prompt",
         "description": "{prompt}"
+      },
+      "wrapper": {
+        "title": "Conversation Proxy settings",
+        "data": {
+          "wrapped_agent": "Wrapped conversation agent",
+          "deny_unknown": "Deny unknown speakers",
+          "refusal_lines": "Refusal lines (one per row)",
+          "alarm_entity": "Home alarm",
+          "alarm_unknown_disarmed": "Treat an unknown alarm state as disarmed"
+        },
+        "data_description": {
+          "wrapped_agent": "The conversation agent to protect, for example your Anthropic agent. Select Speaking Person on that agent as well, so it gets the person tools. Then pick the proxy's entity as the agent in your voice pipeline.",
+          "deny_unknown": "When on, anyone who is not a person set up under Speaking Person, including a turn with no user, is refused and the wrapped agent is never called. Starts from the current Speaking Person setting.",
+          "refusal_lines": "A refused speaker hears one of these lines. Starts from the current Speaking Person lines.",
+          "alarm_entity": "Optional. While this alarm is in any state other than disarmed (including arming, pending and triggered), unknown speakers are refused even if Deny unknown speakers is off. Recognised people are always allowed. The alarm never loosens Deny unknown speakers.",
+          "alarm_unknown_disarmed": "What to do when the alarm is unknown, unavailable or missing. Off (the default) treats it as armed, so only recognised people are allowed. On treats it as disarmed."
+        }
       }
     },
     "error": {
-      "invalid_household_aliases": "Each alias line must use entity_id: alias, and the entity must be one of the household devices."
+      "invalid_household_aliases": "Each alias line must use entity_id: alias, and the entity must be one of the household devices.",
+      "wrapped_is_wrapper": "Choose a real conversation agent, not another proxy."
     },
     "abort": {
       "no_options": "This one has no options.",
@@ -274,6 +309,18 @@
     "missing_account": {
       "title": "{name} has no usable user account",
       "description": "The Home Assistant user account for {name} was deleted or has no name, so the voice is now treated as an unknown speaker. Open Speaker Recognition Tools under Settings > Devices & services, and edit or delete {name}."
+    },
+    "wrapper_missing_api": {
+      "title": "{agent} does not use Speaking Person",
+      "description": "The Conversation Proxy wraps {agent}, but that agent does not have the Speaking Person API selected, so it gets no person tools. Open the agent's settings under Settings > Devices & services and tick Speaking Person under its LLM APIs."
+    },
+    "wrapper_missing_person_entry": {
+      "title": "The Conversation Proxy has no Speaking Person",
+      "description": "The Conversation Proxy needs the Speaking Person entry to know who is allowed, so every speaker is treated as unknown. Add Speaking Person under Settings > Devices & services > Add integration > Speaker Recognition Tools."
+    },
+    "no_wrapper": {
+      "title": "Speaking Person needs the Conversation Proxy",
+      "description": "Without the Conversation Proxy, Speaking Person gives the agent no tools and no speaker text. Add it under Settings > Devices & services > Add integration > Speaker Recognition Tools > Conversation Proxy, pick your conversation agent, then use the proxy as the agent in your voice pipeline."
     }
   },
   "entity": {

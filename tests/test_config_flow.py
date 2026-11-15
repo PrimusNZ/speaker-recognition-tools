@@ -23,7 +23,6 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_ADMIN_ENTITIES,
     CONF_CALENDARS,
     CONF_CONFIRM_ENTITIES,
-    CONF_DENY_UNKNOWN,
     CONF_ENTITIES,
     CONF_ENTITY_ALIASES,
     CONF_HOUSEHOLD_ALIASES,
@@ -42,21 +41,19 @@ from custom_components.speaker_recognition_tools.const import (
     CONF_NOTIFY_SERVICE,
     CONF_PERSON_ENTITY,
     CONF_PRIVATE_ENTITIES,
-    CONF_REFUSAL_LINES,
     CONF_THIRD_PERSON_REFERENCE,
     CONF_TODO_LIST,
     CONF_TODO_PRIVATE,
     CONF_TOOL_TYPE,
     CONF_UNKNOWN_ADDRESS_AS,
     CONF_USER_ID,
-    DEFAULT_REFUSAL_LINES,
     DEFAULT_UNKNOWN_ADDRESS_AS,
     DOMAIN,
     SUBENTRY_ENTITY_LINK,
     SUBENTRY_PREVIEW,
     SUBENTRY_SPEAKER,
-    TOOL_TYPE_DEVICE,
     TOOL_TYPE_PERSON,
+    TOOL_TYPE_WRAPPER,
 )
 
 
@@ -67,7 +64,7 @@ async def _add(hass: HomeAssistant, option: str):
     assert result["type"] is FlowResultType.MENU
     assert result["menu_options"] == [
         "speaking_person",
-        "speaking_device",
+        "conversation_wrapper",
         "preview_full",
     ]
     return await hass.config_entries.flow.async_configure(
@@ -80,21 +77,10 @@ async def test_add_speaking_person(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Speaking Person"
     assert result["data"] == {CONF_TOOL_TYPE: TOOL_TYPE_PERSON}
-    assert result["options"] == {
-        CONF_UNKNOWN_ADDRESS_AS: DEFAULT_UNKNOWN_ADDRESS_AS,
-        CONF_DENY_UNKNOWN: False,
-        CONF_REFUSAL_LINES: DEFAULT_REFUSAL_LINES,
-    }
+    assert result["options"] == {CONF_UNKNOWN_ADDRESS_AS: DEFAULT_UNKNOWN_ADDRESS_AS}
 
 
-async def test_add_speaking_device(hass: HomeAssistant) -> None:
-    result = await _add(hass, "speaking_device")
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "Speaking Device"
-    assert result["data"] == {CONF_TOOL_TYPE: TOOL_TYPE_DEVICE}
-
-
-async def test_full_preview_available_before_adding_either_api(
+async def test_full_preview_available_before_adding_anything(
     hass: HomeAssistant,
 ) -> None:
     result = await hass.config_entries.flow.async_init(
@@ -106,28 +92,24 @@ async def test_full_preview_available_before_adding_either_api(
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "preview_full_result"
     prompt = result["description_placeholders"]["prompt"]
-    assert prompt == ""
-    assert "adds no prompt sections" in result["description_placeholders"]["note"]
-    assert result["description_placeholders"]["disclaimer"] == ""
+    assert "## SPEAKING DEVICE" in prompt
+    assert "## SPEAKING PERSON" not in prompt
+    assert "not set up yet" in result["description_placeholders"]["note"]
+    assert "example rendering" in result["description_placeholders"]["disclaimer"]
 
 
 async def test_each_tool_only_once(hass: HomeAssistant) -> None:
-    for option in ("speaking_person", "speaking_device"):
-        assert (await _add(hass, option))["type"] is FlowResultType.CREATE_ENTRY
-        result = await _add(hass, option)
-        assert result["type"] is FlowResultType.ABORT
-        assert result["reason"] == "already_configured"
+    assert (await _add(hass, "speaking_person"))["type"] is FlowResultType.CREATE_ENTRY
+    result = await _add(hass, "speaking_person")
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
 
 
 async def _person_entry(hass: HomeAssistant) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_TOOL_TYPE: TOOL_TYPE_PERSON},
-        options={
-            CONF_UNKNOWN_ADDRESS_AS: DEFAULT_UNKNOWN_ADDRESS_AS,
-            CONF_DENY_UNKNOWN: False,
-            CONF_REFUSAL_LINES: DEFAULT_REFUSAL_LINES,
-        },
+        options={CONF_UNKNOWN_ADDRESS_AS: DEFAULT_UNKNOWN_ADDRESS_AS},
         unique_id=f"{DOMAIN}_{TOOL_TYPE_PERSON}",
     )
     entry.add_to_hass(hass)
@@ -147,25 +129,10 @@ async def test_options_flow(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {
-            CONF_DENY_UNKNOWN: True,
-            CONF_UNKNOWN_ADDRESS_AS: "Guest",
-            CONF_REFUSAL_LINES: "No.\nStill no.",
-        },
+        {CONF_UNKNOWN_ADDRESS_AS: "Guest"},
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options[CONF_DENY_UNKNOWN] is True
     assert entry.options[CONF_UNKNOWN_ADDRESS_AS] == "Guest"
-    assert entry.options[CONF_REFUSAL_LINES] == "No.\nStill no."
-
-
-async def test_options_flow_not_available_for_device(hass: HomeAssistant) -> None:
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_TOOL_TYPE: TOOL_TYPE_DEVICE})
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "no_options"
 
 
 async def test_subentry_types(hass: HomeAssistant) -> None:
@@ -178,8 +145,8 @@ async def test_subentry_types(hass: HomeAssistant) -> None:
     assert SUBENTRY_SPEAKER in types
     assert SUBENTRY_ENTITY_LINK in types
     assert SUBENTRY_PREVIEW in types
-    device = MockConfigEntry(domain=DOMAIN, data={CONF_TOOL_TYPE: TOOL_TYPE_DEVICE})
-    assert SpeakerRecognitionToolsFlow.async_get_supported_subentry_types(device) == {}
+    wrapper = MockConfigEntry(domain=DOMAIN, data={CONF_TOOL_TYPE: TOOL_TYPE_WRAPPER})
+    assert SpeakerRecognitionToolsFlow.async_get_supported_subentry_types(wrapper) == {}
 
 
 async def test_integration_page_preview_works_without_person_subentries(
@@ -196,8 +163,8 @@ async def test_integration_page_preview_works_without_person_subentries(
     prompt = flow["description_placeholders"]["prompt"]
     assert "## SPEAKING PERSON" in prompt
     assert "Unknown Person" in prompt
-    assert "## SPEAKING DEVICE" not in prompt
-    assert flow["description_placeholders"]["disclaimer"] == ""
+    assert "## SPEAKING DEVICE" in prompt
+    assert "example rendering" in flow["description_placeholders"]["disclaimer"]
     assert len(entry.subentries) == 0
     result = await hass.config_entries.subentries.async_configure(flow["flow_id"], {})
     assert result["type"] is FlowResultType.ABORT
@@ -206,8 +173,8 @@ async def test_integration_page_preview_works_without_person_subentries(
 
 
 async def test_full_preview_omits_unconfigured_person_api(hass: HomeAssistant) -> None:
-    await _add(hass, "speaking_device")
-    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    entry = MockConfigEntry(domain="test")
+    entry.add_to_hass(hass)
     dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, "device-only-preview")},
@@ -686,13 +653,8 @@ async def test_full_prompt_preview_uses_logged_in_account_and_sample_device(
     entry = await _person_entry(hass)
     user = await _user(hass, "James")
     await _add_person(hass, entry, user.id, "Dad")
-    device_entry = await _add(hass, "speaking_device")
-    assert device_entry["type"] is FlowResultType.CREATE_ENTRY
-    device_config_entry = next(
-        entry
-        for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.data[CONF_TOOL_TYPE] == TOOL_TYPE_DEVICE
-    )
+    device_config_entry = MockConfigEntry(domain="test")
+    device_config_entry.add_to_hass(hass)
     area = ar.async_get(hass).async_create("Kitchen")
     device_registry = dr.async_get(hass)
     water_heater = device_registry.async_get_or_create(
@@ -736,7 +698,7 @@ async def test_full_prompt_preview_uses_logged_in_account_and_sample_device(
     assert disclaimer.startswith("Disclaimer: This is an example rendering.")
     assert "randomly selected registered device" in disclaimer
     assert "example rendering" not in note
-    assert "order they were added" in note
+    assert "not set up yet" in note
     assert "device_registry.devices" not in caplog.text
 
 
@@ -990,9 +952,7 @@ async def test_settings_save_minimum_confidence(hass: HomeAssistant) -> None:
     result = await hass.config_entries.options.async_configure(
         flow["flow_id"],
         {
-            CONF_DENY_UNKNOWN: False,
             CONF_UNKNOWN_ADDRESS_AS: "Visitor",
-            CONF_REFUSAL_LINES: "No.",
             CONF_MIN_CONFIDENCE: 0.75,
         },
     )
@@ -1010,9 +970,7 @@ async def test_settings_save_and_clear_household_devices(hass: HomeAssistant) ->
         result = await hass.config_entries.options.async_configure(
             flow["flow_id"],
             {
-                CONF_DENY_UNKNOWN: False,
                 CONF_UNKNOWN_ADDRESS_AS: "Visitor",
-                CONF_REFUSAL_LINES: "No.",
                 CONF_MIN_CONFIDENCE: 0,
                 **({CONF_HOUSEHOLD_DEVICES: devices} if devices else {}),
             },
@@ -1300,9 +1258,7 @@ async def _save_settings(hass, entry, **extra):
     return await hass.config_entries.options.async_configure(
         flow["flow_id"],
         {
-            CONF_DENY_UNKNOWN: False,
             CONF_UNKNOWN_ADDRESS_AS: "Visitor",
-            CONF_REFUSAL_LINES: "No.",
             CONF_MIN_CONFIDENCE: 0,
             **extra,
         },
